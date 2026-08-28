@@ -218,9 +218,12 @@ class PasargadEngine {
       }
 
       const data = await resp.json();
+      
       const parsedResult = {
-        status: 'success',
+        status: data.status || 'success',
         sayadi_id: cleanSayadi,
+        holder_id: data.holder_id || options.holderId,
+        holder_name: data.holder_name || '',
         holder_national_id: cleanIdCode,
         in_transit_amount: data.in_transit_amount || 0,
         in_transit_count: data.in_transit_count || 0,
@@ -229,11 +232,18 @@ class PasargadEngine {
         bounced_amount: data.bounced_amount || 0,
         bounced_count: data.bounced_count || 0,
         owners_info: data.owners_info || [],
-        inquiry_time: new Date().toISOString().replace('T', ' ').slice(0, 19)
+        message: data.message || 'استعلام با موفقیت دریافت شد',
+        is_passed_due: data.is_passed_due || false,
+        inquiry_time: new Date().toISOString()
       };
 
       this.cache.set(cacheKey, { timestamp: Date.now(), data: parsedResult });
-      window.AppLogger.success('PASARGAD', `استعلام زنده پاسارگاد برای صیادی ${cleanSayadi} با موفقیت ثبت شد. (در راه: ${parsedResult.in_transit_amount.toLocaleString('fa-IR')} ریال | برگشتی: ${parsedResult.bounced_amount.toLocaleString('fa-IR')} ریال)`);
+      
+      if (parsedResult.status === 'success') {
+        window.AppLogger.success('PASARGAD', `استعلام صیادی ${cleanSayadi} با دارنده (${parsedResult.holder_name || 'یافت‌شده'}) ثبت شد. (در راه: ${parsedResult.in_transit_amount.toLocaleString('fa-IR')} ریال | برگشتی: ${parsedResult.bounced_amount.toLocaleString('fa-IR')} ریال)`);
+      } else {
+        window.AppLogger.info('PASARGAD', `استعلام صیادی ${cleanSayadi}: ${parsedResult.message}`);
+      }
       return parsedResult;
     }
 
@@ -242,6 +252,7 @@ class PasargadEngine {
     window.AppLogger.warn('PASARGAD', offlineMsg);
     throw new Error(offlineMsg);
   }
+
 
   // ─────────────────────────────────────────────────────────────
   // ⚡ Parallel Batch Inquiry Engine

@@ -36,44 +36,52 @@
 <body class="flex min-h-screen">
 
   <!-- ─────────────────────────────────────────────────────────────
-       📱 Sidebar Navigation
+       📱 Mobile Sidebar Backdrop Overlay
        ───────────────────────────────────────────────────────────── -->
-  <aside class="w-64 glass-sidebar flex flex-col justify-between p-4 hidden md:flex z-30 shrink-0">
+  <div id="mobile-sidebar-backdrop" onclick="App.toggleMobileSidebar(false)" class="fixed inset-0 bg-black/60 z-30 hidden md:hidden backdrop-blur-sm"></div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       📱 Sidebar Navigation Drawer
+       ───────────────────────────────────────────────────────────── -->
+  <aside id="app-sidebar" class="w-64 glass-sidebar flex flex-col justify-between p-4 fixed md:static inset-y-0 right-0 z-40 transform translate-x-full md:translate-x-0 transition-transform duration-300 shrink-0">
     <div>
-      <!-- Brand Logo -->
-      <div class="flex items-center gap-3 px-3 py-4 mb-5 border-b border-slate-700/50">
-        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg pulse-glow">
-          <i data-lucide="shield-check" class="w-6 h-6"></i>
+      <!-- Brand Logo & Mobile Close Button -->
+      <div class="flex items-center justify-between px-3 py-4 mb-5 border-b border-slate-700/50">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg pulse-glow">
+            <i data-lucide="shield-check" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h1 class="font-bold text-base tracking-tight">صیاد پرو وب</h1>
+            <p class="text-[11px] text-slate-400">بانک مرکزی و پاسارگاد</p>
+          </div>
         </div>
-        <div>
-          <h1 class="font-bold text-base tracking-tight">صیاد پرو وب</h1>
-          <p class="text-[11px] text-slate-400">بانک مرکزی و پاسارگاد</p>
-        </div>
+        <button onclick="App.toggleMobileSidebar(false)" class="p-1.5 text-slate-400 hover:text-white md:hidden"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
 
       <!-- Navigation Links -->
       <nav class="space-y-1.5">
-        <button onclick="App.switchTab('dashboard')" data-tab="dashboard" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition bg-blue-600 text-white shadow-md">
+        <button onclick="App.switchTab('dashboard'); App.toggleMobileSidebar(false);" data-tab="dashboard" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition bg-blue-600 text-white shadow-md">
           <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
           <span>داشبورد و آمار کلی</span>
         </button>
 
-        <button onclick="App.switchTab('customers')" data-tab="customers" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
+        <button onclick="App.switchTab('customers'); App.toggleMobileSidebar(false);" data-tab="customers" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="users" class="w-5 h-5"></i>
           <span>فهرست مشتریان</span>
         </button>
 
-        <button onclick="App.switchTab('cheques', 'all')" data-tab="cheques" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
+        <button onclick="App.switchTab('cheques', 'all'); App.toggleMobileSidebar(false);" data-tab="cheques" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="file-text" class="w-5 h-5"></i>
           <span>تمام چک‌های صیادی</span>
         </button>
 
-        <button onclick="App.switchTab('cbi')" data-tab="cbi" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
+        <button onclick="App.switchTab('cbi'); App.toggleMobileSidebar(false);" data-tab="cbi" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="landmark" class="w-5 h-5"></i>
           <span>استعلام بانک مرکزی</span>
         </button>
 
-        <button onclick="App.switchTab('pasargad')" data-tab="pasargad" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
+        <button onclick="App.switchTab('pasargad'); App.toggleMobileSidebar(false);" data-tab="pasargad" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="building-2" class="w-5 h-5"></i>
           <span>استعلام پاسارگاد</span>
         </button>
@@ -84,7 +92,7 @@
     <!-- Bottom Actions & Utilities -->
     <div class="space-y-2 pt-4 border-t border-slate-700/50">
       <!-- Bulk Inquiry Quick Trigger -->
-      <button onclick="App.openBulkInquiryModal()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-2xl text-xs font-bold shadow-lg transition">
+      <button onclick="App.openBulkInquiryModal(); App.toggleMobileSidebar(false);" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-2xl text-xs font-bold shadow-lg transition">
         <i data-lucide="zap" class="w-4 h-4 text-amber-300"></i>
         <span>استعلام دسته‌جمعی سبد</span>
       </button>
@@ -97,7 +105,7 @@
 
       <!-- Log Terminal & Backup Grid -->
       <div class="grid grid-cols-2 gap-2">
-        <button onclick="App.openLogsModal()" class="flex items-center justify-center gap-1.5 py-2 bg-slate-800/60 hover:bg-slate-700/80 rounded-2xl text-[11px] font-medium transition" title="مشاهده لاگ‌های سیستم">
+        <button onclick="App.openLogsModal(); App.toggleMobileSidebar(false);" class="flex items-center justify-center gap-1.5 py-2 bg-slate-800/60 hover:bg-slate-700/80 rounded-2xl text-[11px] font-medium transition" title="مشاهده لاگ‌های سیستم">
           <i data-lucide="terminal" class="w-3.5 h-3.5 text-indigo-400"></i>
           <span>لاگ‌ها (<span id="sidebar-log-count">۰</span>)</span>
         </button>
@@ -125,12 +133,19 @@
   <div class="flex-1 flex flex-col min-w-0">
     
     <!-- Topbar Header -->
-    <header class="glass-header px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
-      <!-- Search Input -->
-      <div class="relative flex-1 max-w-md">
-        <i data-lucide="search" class="w-4 h-4 absolute right-3.5 top-3.5 text-slate-400"></i>
-        <input id="global-search-input" type="text" placeholder="جستجوی نام مشتری، کدملی، شماره صیادی یا سریال..." class="w-full rounded-2xl pr-10 pl-4 py-2.5 text-sm focus:outline-none transition">
+    <header class="glass-header px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3 sticky top-0 z-20">
+      <!-- Mobile Menu Hamburger & Search -->
+      <div class="flex items-center gap-2.5 flex-1 max-w-lg">
+        <button onclick="App.toggleMobileSidebar()" class="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-2xl md:hidden transition shrink-0" title="منوی برنامه">
+          <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
+
+        <div class="relative flex-1">
+          <i data-lucide="search" class="w-4 h-4 absolute right-3.5 top-3 text-slate-400"></i>
+          <input id="global-search-input" type="text" placeholder="جستجوی نام مشتری، کدملی، شماره صیادی یا سریال..." class="w-full rounded-2xl pr-10 pl-4 py-2 text-xs sm:text-sm focus:outline-none transition">
+        </div>
       </div>
+
 
       <!-- Quick Action Buttons -->
       <div class="flex items-center gap-3">
@@ -360,14 +375,18 @@
            TAB 2: Customers Directory
            ═════════════════════════════════════════════════════════════ -->
       <section id="view-customers" class="tab-view hidden space-y-4">
+        <!-- Filter Drilldown Banner -->
+        <div id="customers-filter-banner" class="hidden"></div>
+
         <!-- Controls & Filters -->
         <div class="glass-card p-4 flex flex-wrap items-center justify-between gap-4">
           <div class="flex items-center gap-3">
-            <h2 class="text-lg font-bold flex items-center gap-2">
+            <h2 id="customers-view-title" class="text-lg font-bold flex items-center gap-2">
               <i data-lucide="users" class="w-5 h-5 text-blue-400"></i>
               فهرست مشتریان
             </h2>
           </div>
+
 
           <!-- Color Filter -->
           <div class="flex items-center gap-3">
@@ -865,16 +884,40 @@
 
       <div class="space-y-3">
         <div>
-          <label class="block text-xs font-semibold mb-1">صاحب چک (مشتری) *:</label>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-semibold">صاحب چک (مشتری) *:</label>
+            <button type="button" onclick="App.toggleQuickNewCustomerInline(true)" class="text-[11px] text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 transition">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+              <span>➕ ایجاد مشتری جدید</span>
+            </button>
+          </div>
           <select id="cheque-form-customer-select" class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
             <!-- Dynamically loaded -->
           </select>
+
+          <!-- Quick Customer Inline Add Box -->
+          <div id="inline-quick-customer-box" class="p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-2xl space-y-2 mt-2 hidden animate-fade-in">
+            <div class="text-xs font-bold text-blue-300 flex items-center gap-1.5">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+              <span>تعریف سریع مشتری جدید:</span>
+            </div>
+            <input id="quick-cust-name" type="text" placeholder="نام و نام خانوادگی مشتری *" class="w-full rounded-xl px-3 py-1.5 text-xs focus:outline-none">
+            <div class="grid grid-cols-2 gap-2">
+              <input id="quick-cust-phone" type="text" placeholder="شماره تماس" class="w-full rounded-xl px-3 py-1.5 text-xs focus:outline-none">
+              <input id="quick-cust-national-id" type="text" placeholder="کد ملی" class="w-full rounded-xl px-3 py-1.5 text-xs focus:outline-none">
+            </div>
+            <div class="flex justify-end gap-2 pt-1">
+              <button type="button" onclick="App.toggleQuickNewCustomerInline(false)" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition">انصراف</button>
+              <button type="button" onclick="App.saveQuickCustomerInline()" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shadow-md transition">ثبت و انتخاب مشتری</button>
+            </div>
+          </div>
         </div>
 
         <div>
           <label class="block text-xs font-semibold mb-1">شناسه ۱۶ رقمی صیادی *:</label>
           <input id="cheque-form-sayadi" type="text" maxlength="16" placeholder="۱۶ رقم صیادی" class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
         </div>
+
 
         <div class="grid grid-cols-2 gap-3">
           <div>

@@ -3,7 +3,7 @@
  * Handles Data Persistence, View Navigation, Drilldowns, Holders CRUD, Batch Inquiry & Log Console.
  */
 const App = {
-  STORAGE_KEY: 'sayad_app_local_data_v2',
+  STORAGE_KEY: 'sayad_app_local_data_v3',
   state: {
     currentTab: 'dashboard',
     chequeFilterMode: 'all', // 'all', 'in-transit', 'cleared', 'bounced', 'sorted-amount'
@@ -281,13 +281,98 @@ const App = {
   },
 
   // ─────────────────────────────────────────────────────────────
-  // 👥 Customers Directory Table
+  // 👥 Customers Directory Table (With Drilldown & Breakdown Modes)
   // ─────────────────────────────────────────────────────────────
   renderCustomersTable() {
     const container = document.getElementById('customers-table-body');
+    const headerTitle = document.getElementById('customers-view-title');
+    const filterBanner = document.getElementById('customers-filter-banner');
     if (!container) return;
 
     let list = [...this.state.customers];
+    const mode = this.state.customerFilterMode || 'all';
+
+    // Apply drilldown filter mode
+    if (mode === 'in-transit') {
+      list = list.filter(c => {
+        const inqs = this.state.inquiries.filter(i => i.customer_id === c.id || this.getCustomerCheques(c.id).some(ch => ch.sayadi_id === i.sayadi_id));
+        return inqs.some(i => i.in_transit_amount > 0);
+      });
+      list.sort((a, b) => {
+        const sumA = this.state.inquiries.filter(i => i.customer_id === a.id || this.getCustomerCheques(a.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
+        const sumB = this.state.inquiries.filter(i => i.customer_id === b.id || this.getCustomerCheques(b.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
+        return sumB - sumA;
+      });
+      if (filterBanner) {
+        filterBanner.innerHTML = `
+          <div class="p-3 bg-sky-500/10 border border-sky-500/30 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-2 text-sky-400 text-sm font-semibold">
+              <i data-lucide="truck" class="w-4 h-4"></i>
+              تفکیک مشتریان دارای چک‌های در راه پاسارگاد (${list.length} مشتری)
+            </div>
+            <button onclick="App.switchTab('customers', 'all')" class="text-xs text-sky-300 hover:underline">نمایش همه مشتریان</button>
+          </div>`;
+        filterBanner.classList.remove('hidden');
+      }
+    } else if (mode === 'cleared') {
+      list = list.filter(c => {
+        const inqs = this.state.inquiries.filter(i => i.customer_id === c.id || this.getCustomerCheques(c.id).some(ch => ch.sayadi_id === i.sayadi_id));
+        return inqs.some(i => i.cleared_amount > 0);
+      });
+      list.sort((a, b) => {
+        const sumA = this.state.inquiries.filter(i => i.customer_id === a.id || this.getCustomerCheques(a.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
+        const sumB = this.state.inquiries.filter(i => i.customer_id === b.id || this.getCustomerCheques(b.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
+        return sumB - sumA;
+      });
+      if (filterBanner) {
+        filterBanner.innerHTML = `
+          <div class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-2 text-emerald-400 text-sm font-semibold">
+              <i data-lucide="check-check" class="w-4 h-4"></i>
+              تفکیک مشتریان دارای سابقه رفع سوءاثر شده (${list.length} مشتری)
+            </div>
+            <button onclick="App.switchTab('customers', 'all')" class="text-xs text-emerald-300 hover:underline">نمایش همه مشتریان</button>
+          </div>`;
+        filterBanner.classList.remove('hidden');
+      }
+    } else if (mode === 'bounced') {
+      list = list.filter(c => {
+        const inqs = this.state.inquiries.filter(i => i.customer_id === c.id || this.getCustomerCheques(c.id).some(ch => ch.sayadi_id === i.sayadi_id));
+        return inqs.some(i => i.bounced_amount > 0);
+      });
+      list.sort((a, b) => {
+        const sumA = this.state.inquiries.filter(i => i.customer_id === a.id || this.getCustomerCheques(a.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
+        const sumB = this.state.inquiries.filter(i => i.customer_id === b.id || this.getCustomerCheques(b.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
+        return sumB - sumA;
+      });
+      if (filterBanner) {
+        filterBanner.innerHTML = `
+          <div class="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-2 text-rose-400 text-sm font-semibold">
+              <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+              هشدار: تفکیک مشتریان دارای سوابق چک برگشتی (${list.length} مشتری)
+            </div>
+            <button onclick="App.switchTab('customers', 'all')" class="text-xs text-rose-300 hover:underline">نمایش همه مشتریان</button>
+          </div>`;
+        filterBanner.classList.remove('hidden');
+      }
+    } else if (mode === 'amount') {
+      list.sort((a, b) => this.getCustomerChequesSum(b.id) - this.getCustomerChequesSum(a.id));
+      if (filterBanner) {
+        filterBanner.innerHTML = `
+          <div class="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-2 text-blue-400 text-sm font-semibold">
+              <i data-lucide="arrow-down-narrow-wide" class="w-4 h-4"></i>
+              تفکیک مشتریان بر اساس مجموع ارزش ریالی سبد چک‌ها
+            </div>
+            <button onclick="App.switchTab('customers', 'all')" class="text-xs text-blue-300 hover:underline">حالت عادی</button>
+          </div>`;
+        filterBanner.classList.remove('hidden');
+      }
+    } else {
+      if (filterBanner) filterBanner.classList.add('hidden');
+      list.sort((a, b) => this.getCustomerChequesSum(b.id) - this.getCustomerChequesSum(a.id));
+    }
 
     // Search filter
     if (this.state.searchQuery.trim()) {
@@ -305,19 +390,12 @@ const App = {
       list = list.filter(c => (c.credit_color || '').trim() === this.state.colorFilter);
     }
 
-    // Sort by total cheque amount
-    list.sort((a, b) => {
-      const sumA = this.getCustomerChequesSum(a.id);
-      const sumB = this.getCustomerChequesSum(b.id);
-      return sumB - sumA;
-    });
-
     if (list.length === 0) {
       container.innerHTML = `
         <tr>
           <td colspan="7" class="text-center py-12 text-slate-400">
             <i data-lucide="users" class="w-12 h-12 mx-auto mb-3 opacity-40"></i>
-            هیچ مشتری با مشخصات جستجو شده یافت نشد.
+            هیچ مشتری با مشخصات فیلتر فعلی یافت نشد.
           </td>
         </tr>`;
       if (window.lucide) lucide.createIcons();
@@ -326,7 +404,23 @@ const App = {
 
     container.innerHTML = list.map((c, idx) => {
       const cheques = this.getCustomerCheques(c.id);
+      const inqs = this.state.inquiries.filter(i => i.customer_id === c.id || cheques.some(ch => ch.sayadi_id === i.sayadi_id));
+      
+      const inTransitSum = inqs.reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
+      const clearedSum = inqs.reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
+      const bouncedSum = inqs.reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
       const totalSum = cheques.reduce((s, ch) => s + (parseFloat(ch.amount) || 0), 0);
+
+      let metricColHtml = '';
+      if (mode === 'in-transit') {
+        metricColHtml = `<span class="text-sky-400 font-bold font-mono">${this.formatMoney(inTransitSum)}</span> <span class="text-[10px] text-slate-400">ریال در راه</span>`;
+      } else if (mode === 'cleared') {
+        metricColHtml = `<span class="text-emerald-400 font-bold font-mono">${this.formatMoney(clearedSum)}</span> <span class="text-[10px] text-slate-400">ریال رفع اثر</span>`;
+      } else if (mode === 'bounced') {
+        metricColHtml = `<span class="text-rose-400 font-bold font-mono">${this.formatMoney(bouncedSum)}</span> <span class="text-[10px] text-slate-400">ریال برگشتی</span>`;
+      } else {
+        metricColHtml = `<span class="text-emerald-400 font-bold font-mono">${this.formatMoney(totalSum)}</span> <span class="text-[10px] text-slate-400">ریال کل</span>`;
+      }
 
       return `
         <tr class="border-b border-slate-700/30 hover:bg-slate-500/10 transition">
@@ -347,19 +441,20 @@ const App = {
           <td class="py-4 px-4 text-center font-mono font-bold text-blue-400">
             ${(cheques.length).toLocaleString('fa-IR')} فقره
           </td>
-          <td class="py-4 px-4 text-left font-mono font-bold text-emerald-400">
-            ${this.formatMoney(totalSum)} <span class="text-xs text-slate-400 font-normal">ریال</span>
+          <td class="py-4 px-4 text-left font-mono">
+            ${metricColHtml}
           </td>
           <td class="py-4 px-4 text-center">
             <div class="flex items-center justify-center gap-2">
-              <button onclick="App.viewCustomerProfile(${c.id})" class="p-2 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg transition" title="مشاهده پروفایل">
-                <i data-lucide="eye" class="w-4 h-4"></i>
+              <button onclick="App.viewCustomerProfile(${c.id})" class="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1 transition" title="مشاهده پرونده و سوابق استعلام">
+                <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                <span>پرونده</span>
               </button>
-              <button onclick="App.openEditCustomerModal(${c.id})" class="p-2 bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white rounded-lg transition" title="ویرایش">
-                <i data-lucide="edit-3" class="w-4 h-4"></i>
+              <button onclick="App.openEditCustomerModal(${c.id})" class="p-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white rounded-lg transition" title="ویرایش">
+                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
               </button>
-              <button onclick="App.deleteCustomer(${c.id})" class="p-2 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg transition" title="حذف">
-                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              <button onclick="App.deleteCustomer(${c.id})" class="p-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg transition" title="حذف">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
               </button>
             </div>
           </td>
@@ -369,6 +464,7 @@ const App = {
 
     if (window.lucide) lucide.createIcons();
   },
+
 
   // ─────────────────────────────────────────────────────────────
   // 📑 Cheques Directory Table (With Dynamic Filter Modes)
@@ -773,10 +869,13 @@ const App = {
         customerId: finalCustId
       });
 
+      const matchedHolderId = res.holder_id || holder.id;
+      const matchedHolder = this.state.holders.find(h => h.id === matchedHolderId) || holder;
+
       const inquiryRecord = {
         id: Date.now(),
         sayadi_id: sayadiId,
-        holder_id: holder.id,
+        holder_id: matchedHolderId,
         customer_id: finalCustId,
         inquiry_type: 'pasargad',
         in_transit_amount: res.in_transit_amount,
@@ -786,14 +885,24 @@ const App = {
         bounced_amount: res.bounced_amount,
         bounced_count: res.bounced_count,
         inquiry_time: new Date().toISOString(),
-        status: 'success'
+        status: res.status || 'success'
       };
 
-      this.state.inquiries.unshift(inquiryRecord);
-      if (ch) ch.holder_id = holder.id;
+      const existingIdx = this.state.inquiries.findIndex(i => i.sayadi_id === sayadiId);
+      if (existingIdx >= 0) {
+        this.state.inquiries[existingIdx] = inquiryRecord;
+      } else {
+        this.state.inquiries.unshift(inquiryRecord);
+      }
+
+      if (ch) ch.holder_id = matchedHolderId;
       this.saveData();
 
-      this.showToast(`استعلام صیادی ${sayadiId} با موفقیت ثبت شد.`, 'success');
+      if (res.status === 'success') {
+        this.showToast(`استعلام دارنده (${matchedHolder.full_name}) با موفقیت ثبت شد.`, 'success');
+      } else {
+        this.showToast(res.message || 'نتیجه استعلام ثبت شد.', 'info');
+      }
 
       // Update current view or open modal smoothly in-place
       if (this.state.selectedCustomer && this.state.selectedCustomer.id === finalCustId) {
@@ -811,6 +920,7 @@ const App = {
       this.showToast(`خطا در استعلام: ${err.message}`, 'error');
     }
   },
+
 
   // ─────────────────────────────────────────────────────────────
   // 📱 Window Management: Minimize / Maximize / FullScreen
@@ -1831,15 +1941,113 @@ const App = {
     }, 3500);
   },
 
+  // ─────────────────────────────────────────────────────────────
+  // ⚡ Quick Inline Customer Creation in Cheque Modal
+  // ─────────────────────────────────────────────────────────────
+  toggleQuickNewCustomerInline(show = true) {
+    const box = document.getElementById('inline-quick-customer-box');
+    const select = document.getElementById('cheque-form-customer-select');
+    if (!box) return;
+
+    if (show) {
+      box.classList.remove('hidden');
+      if (select) select.classList.add('opacity-50', 'pointer-events-none');
+      const nameInput = document.getElementById('quick-cust-name');
+      if (nameInput) nameInput.focus();
+    } else {
+      box.classList.add('hidden');
+      if (select) select.classList.remove('opacity-50', 'pointer-events-none');
+    }
+  },
+
+  saveQuickCustomerInline() {
+    const nameInput = document.getElementById('quick-cust-name');
+    const phoneInput = document.getElementById('quick-cust-phone');
+    const nationalInput = document.getElementById('quick-cust-national-id');
+
+    const name = nameInput ? nameInput.value.trim() : '';
+    const phone = phoneInput ? phoneInput.value.trim() : '';
+    const national_id = nationalInput ? nationalInput.value.trim() : '';
+
+    if (!name) {
+      this.showToast('نام مشتری الزامی است.', 'error');
+      return;
+    }
+
+    const newCust = {
+      id: Date.now(),
+      full_name: name,
+      national_id: national_id,
+      phone: phone,
+      address: '',
+      notes: 'ایجاد سریع از فرم چک',
+      credit_color: 'نامشخص',
+      risk_score: 0,
+      created_at: new Date().toISOString().slice(0, 10)
+    };
+
+    this.state.customers.push(newCust);
+    this.saveData();
+
+    // Populate dropdown and select new customer
+    this.populateCustomerDropdowns();
+    const select = document.getElementById('cheque-form-customer-select');
+    if (select) select.value = newCust.id;
+
+    // Reset and hide
+    if (nameInput) nameInput.value = '';
+    if (phoneInput) phoneInput.value = '';
+    if (nationalInput) nationalInput.value = '';
+    this.toggleQuickNewCustomerInline(false);
+
+    window.AppLogger.success('CRUD', `مشتری جدید "${name}" به صورت سریع ایجاد و انتخاب شد.`);
+    this.showToast(`مشتری "${name}" ایجاد و انتخاب شد.`, 'success');
+  },
+
+  populateCustomerDropdowns() {
+    const select = document.getElementById('cheque-form-customer-select');
+    if (!select) return;
+
+    select.innerHTML = this.state.customers.map(c => `
+      <option value="${c.id}">${c.full_name} ${c.national_id ? `(${c.national_id})` : ''}</option>
+    `).join('');
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // 📱 Mobile Hamburger Drawer Toggle
+  // ─────────────────────────────────────────────────────────────
+  toggleMobileSidebar(open = null) {
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.getElementById('mobile-sidebar-backdrop');
+    if (!sidebar) return;
+
+    const isOpen = !sidebar.classList.contains('translate-x-full');
+    const shouldOpen = open !== null ? open : !isOpen;
+
+    if (shouldOpen) {
+      sidebar.classList.remove('translate-x-full');
+      if (backdrop) backdrop.classList.remove('hidden');
+    } else {
+      sidebar.classList.add('translate-x-full');
+      if (backdrop) backdrop.classList.add('hidden');
+    }
+  },
+
   setupEventListeners() {
+    // Global Search Input
     const searchInput = document.getElementById('global-search-input');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         this.state.searchQuery = e.target.value;
-        this.renderCurrentView();
+        if (this.state.searchQuery.trim() && this.state.currentTab === 'dashboard') {
+          this.switchTab('customers', 'all');
+        } else {
+          this.renderCurrentView();
+        }
       });
     }
 
+    // Color filter select
     const colorSelect = document.getElementById('credit-color-filter');
     if (colorSelect) {
       colorSelect.addEventListener('change', (e) => {
@@ -1847,9 +2055,27 @@ const App = {
         this.renderCustomersTable();
       });
     }
+
+    // 🚪 Backdrop Click to Close all Modals
+    document.querySelectorAll('.modal-backdrop').forEach(modal => {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          modal.classList.add('hidden');
+        }
+      });
+    });
+
+    // ⌨️ ESC Key to Close Modals
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.add('hidden'));
+        this.toggleMobileSidebar(false);
+      }
+    });
   }
 };
 
 document.addEventListener('DOMContentLoaded', () => {
   App.init();
 });
+
