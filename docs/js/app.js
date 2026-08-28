@@ -642,15 +642,104 @@ const App = {
           </table>
         </div>
       </div>
+
+      <!-- 📜 Comprehensive Customer Inquiries History & Audit Log -->
+      <div class="p-6 pt-0">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-slate-200 flex items-center gap-2">
+            <i data-lucide="history" class="w-5 h-5 text-indigo-400"></i>
+            سوابق و تاریخچه استعلام‌های این مشتری (به وقت تهران)
+          </h3>
+          <span class="text-xs text-slate-400 font-mono">${inquiries.length.toLocaleString('fa-IR')} رکورد استعلام ثبت‌شده</span>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-700/60">
+          <table class="w-full text-right text-sm">
+            <thead class="bg-slate-800/80 text-slate-400 text-xs">
+              <tr>
+                <th class="py-3 px-3 w-10">#</th>
+                <th class="py-3 px-3">تاریخ و ساعت (وقت تهران)</th>
+                <th class="py-3 px-3">نوع استعلام</th>
+                <th class="py-3 px-3">شناسه صیادی</th>
+                <th class="py-3 px-3">دارنده (هولدر)</th>
+                <th class="py-3 px-3">چک در راه</th>
+                <th class="py-3 px-3">رفع سوءاثر</th>
+                <th class="py-3 px-3">چک برگشتی</th>
+                <th class="py-3 px-3 text-center">وضعیت</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60 font-mono text-xs">
+              ${inquiries.length === 0 ? `
+                <tr>
+                  <td colspan="9" class="text-center py-6 text-slate-500 font-sans text-xs">
+                    هنوز هیچ سابقه‌ای برای استعلام چک‌های این مشتری ثبت نشده است.
+                  </td>
+                </tr>
+              ` : inquiries.map((inq, idx) => {
+                const holder = this.state.holders.find(h => h.id === inq.holder_id);
+                const hasBounced = inq.bounced_amount > 0;
+                const formattedTime = this.formatTehranShamsi(inq.inquiry_time || inq.created_at);
+
+                return `
+                  <tr class="hover:bg-slate-800/30 transition">
+                    <td class="py-2.5 px-3 text-slate-500">${(idx + 1).toLocaleString('fa-IR')}</td>
+                    <td class="py-2.5 px-3 text-slate-300 font-bold font-sans">${formattedTime}</td>
+                    <td class="py-2.5 px-3">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-sans font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                        ${inq.inquiry_type === 'cbi' ? 'بانک مرکزی (CBI)' : 'بانک پاسارگاد'}
+                      </span>
+                    </td>
+                    <td class="py-2.5 px-3 text-blue-400 font-bold">${inq.sayadi_id}</td>
+                    <td class="py-2.5 px-3 font-sans text-slate-300">${holder ? holder.full_name : 'علی رمضانزاده'}</td>
+                    <td class="py-2.5 px-3 text-sky-300">${this.formatMoney(inq.in_transit_amount || 0)}</td>
+                    <td class="py-2.5 px-3 text-emerald-300">${this.formatMoney(inq.cleared_amount || 0)}</td>
+                    <td class="py-2.5 px-3 ${hasBounced ? 'text-rose-400 font-bold' : 'text-slate-400'}">${this.formatMoney(inq.bounced_amount || 0)}</td>
+                    <td class="py-2.5 px-3 text-center">
+                      <span class="inline-flex items-center gap-1 text-emerald-400 font-sans text-xs">
+                        <i data-lucide="check" class="w-3.5 h-3.5"></i> موفق
+                      </span>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
     `;
 
     modal.classList.remove('hidden');
     if (window.lucide) lucide.createIcons();
   },
 
+  formatTehranShamsi(dateInput) {
+    if (!dateInput) return '---';
+    try {
+      let d = new Date(dateInput);
+      if (isNaN(d.getTime())) {
+        d = new Date(String(dateInput).replace(' ', 'T'));
+      }
+      if (isNaN(d.getTime())) return dateInput;
+
+      return new Intl.DateTimeFormat('fa-IR', {
+        timeZone: 'Asia/Tehran',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).format(d);
+    } catch (e) {
+      return String(dateInput);
+    }
+  },
+
   closeCustomerProfile() {
     document.getElementById('customer-profile-modal').classList.add('hidden');
   },
+
 
   // ─────────────────────────────────────────────────────────────
   // 🏦 Live Single Pasargad Inquiry Action
@@ -689,31 +778,28 @@ const App = {
       if (window.lucide) lucide.createIcons();
 
       // Record in state
+      const ch = this.state.cheques.find(c => c.sayadi_id === sayadiId);
+      const finalCustomerId = customerId || (ch ? ch.customer_id : null);
+
       const inquiryRecord = {
         id: Date.now(),
         sayadi_id: sayadiId,
         holder_id: holder.id,
-        customer_id: customerId,
+        customer_id: finalCustomerId,
+        inquiry_type: 'pasargad',
         in_transit_amount: res.in_transit_amount,
         in_transit_count: res.in_transit_count,
         cleared_amount: res.cleared_amount,
         cleared_count: res.cleared_count,
         bounced_amount: res.bounced_amount,
         bounced_count: res.bounced_count,
-        inquiry_time: res.inquiry_time,
+        inquiry_time: new Date().toISOString(),
         status: 'success'
       };
 
-      const existingIdx = this.state.inquiries.findIndex(i => i.sayadi_id === sayadiId);
-      if (existingIdx >= 0) {
-        this.state.inquiries[existingIdx] = inquiryRecord;
-      } else {
-        this.state.inquiries.push(inquiryRecord);
-      }
+      this.state.inquiries.unshift(inquiryRecord);
 
-      const ch = this.state.cheques.find(c => c.sayadi_id === sayadiId);
       if (ch) ch.holder_id = holder.id;
-
       this.saveData();
 
       // Display result box
@@ -724,7 +810,7 @@ const App = {
       document.getElementById('res-cleared').innerText = this.formatMoney(res.cleared_amount) + ' ریال';
       document.getElementById('res-bounced').innerText = this.formatMoney(res.bounced_amount) + ' ریال';
 
-      this.showToast('استعلام با موفقیت از بانک پاسارگاد دریافت شد.', 'success');
+      this.showToast('استعلام با موفقیت از بانک پاسارگاد دریافت و در سوابق ذخیره شد.', 'success');
       this.renderCurrentView();
 
     } catch (err) {
@@ -762,15 +848,29 @@ const App = {
       btn.innerHTML = `<i data-lucide="shield-check" class="w-4 h-4"></i> استعلام از بانک مرکزی`;
       if (window.lucide) lucide.createIcons();
 
-      // Update customer credit color in state
+      // Update customer credit color and save history
       const ch = this.state.cheques.find(c => c.sayadi_id === sayadiId);
-      if (ch && ch.customer_id) {
-        const cust = this.state.customers.find(c => c.id === ch.customer_id);
-        if (cust) {
-          cust.credit_color = res.credit_color;
-          this.saveData();
-        }
+      const custId = ch ? ch.customer_id : null;
+      if (custId) {
+        const cust = this.state.customers.find(c => c.id === custId);
+        if (cust) cust.credit_color = res.credit_color;
       }
+
+      const cbiInquiryRecord = {
+        id: Date.now(),
+        sayadi_id: sayadiId,
+        customer_id: custId,
+        inquiry_type: 'cbi',
+        credit_color: res.credit_color,
+        in_transit_amount: 0,
+        cleared_amount: 0,
+        bounced_amount: 0,
+        inquiry_time: new Date().toISOString(),
+        status: 'success'
+      };
+
+      this.state.inquiries.unshift(cbiInquiryRecord);
+      this.saveData();
 
       // Show result box
       const resultCard = document.getElementById('cbi-result-card');
@@ -779,8 +879,9 @@ const App = {
       document.getElementById('res-cbi-badge').innerHTML = this.renderCreditBadge(res.credit_color);
       document.getElementById('res-cbi-source').innerText = res.source === 'cbi_live' ? 'استعلام زنده برخط سامانه صیاد' : 'پایگاه داده استعلام‌شده';
 
-      this.showToast(`استعلام بانک مرکزی با موفقیت انجام شد: ${res.credit_color}`, 'success');
+      this.showToast(`استعلام بانک مرکزی با موفقیت ثبت شد: ${res.credit_color}`, 'success');
       this.renderCurrentView();
+
 
     } catch (err) {
       btn.disabled = false;
