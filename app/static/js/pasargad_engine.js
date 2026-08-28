@@ -1,18 +1,13 @@
 /**
- * High-Resilience Dual Banking Inquiry Engine (CBI Central Bank & Pasargad Bank)
- * Supports Local Backend Auto-Bridge, Multi-Proxy Fallback, Parallel Concurrency, and Scheduler.
+ * Hybrid Cloud-Local Banking Inquiry Engine (CBI Central Bank & Pasargad Bank)
+ * Seamlessly connects GitHub Pages frontend to local Python engine for 100% real bank data.
  */
 class PasargadEngine {
   constructor() {
-    this.localBackendUrl = 'http://127.0.0.1:8000';
+    this.STORAGE_KEY_BACKEND = 'sayad_hybrid_backend_url';
+    this.localBackendUrl = this.getSavedBackendUrl();
     this.isLocalBackendConnected = false;
-
-    this.proxies = [
-      { name: 'CORS Proxy Ultra', format: (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}` },
-      { name: 'AllOrigins Mirror', format: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
-      { name: 'CodeTabs Gateway', format: (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}` },
-      { name: 'Direct Gateway', format: (url) => url }
-    ];
+    this.latencyMs = 0;
 
     this.cache = new Map();
     this.cacheTTL = 30 * 60 * 1000; // 30 minutes cache
@@ -41,33 +36,95 @@ class PasargadEngine {
       nextRun: null
     };
 
-    this.checkLocalBackend();
     this.initSchedulerFromStorage();
+    
+    // Auto-check connection immediately and poll periodically
+    this.checkLocalBackend();
+    setInterval(() => this.checkLocalBackend(), 8000);
+  }
+
+  getSavedBackendUrl() {
+    const saved = localStorage.getItem(this.STORAGE_KEY_BACKEND);
+    return saved ? saved.trim() : 'http://127.0.0.1:8000';
+  }
+
+  setBackendUrl(url) {
+    let clean = (url || '').trim().replace(/\/+$/, '');
+    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+      clean = 'http://' + clean;
+    }
+    this.localBackendUrl = clean;
+    localStorage.setItem(this.STORAGE_KEY_BACKEND, clean);
+    return this.checkLocalBackend();
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 🔌 Local Backend Auto-Discovery
+  // 🔌 Live Bridge Auto-Discovery & Healthcheck
   // ─────────────────────────────────────────────────────────────
   async checkLocalBackend() {
-    try {
-      const res = await fetch(`${this.localBackendUrl}/api/stats`, { method: 'GET', signal: AbortSignal.timeout(1500) });
-      if (res.ok) {
-        this.isLocalBackendConnected = true;
-        window.AppLogger.success('SYSTEM', 'ارتباط مستقیم با سرور محلی پایتون (FastAPI) برقرار شد. استعلام‌های واقعی بانک پاسارگاد و بانک مرکزی فعال هستند.');
-        const badge = document.getElementById('backend-status-badge');
-        if (badge) {
-          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> <span class="text-emerald-400">متصل به موتور استعلام مستقیم</span>`;
+    const startTime = performance.now();
+    const candidateUrls = [this.localBackendUrl, 'http://127.0.0.1:8000', 'http://localhost:8000'];
+    const uniqueCandidates = [...new Set(candidateUrls)];
+
+    for (const url of uniqueCandidates) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1200);
+
+        const res = await fetch(`${url}/api/stats`, {
+          method: 'GET',
+          signal: controller.signal
+        });
+
+        clearTimeout(timeout);
+
+        if (res.ok) {
+          this.latencyMs = Math.round(performance.now() - startTime);
+          this.localBackendUrl = url;
+          const wasConnected = this.isLocalBackendConnected;
+          this.isLocalBackendConnected = true;
+
+          if (!wasConnected) {
+            window.AppLogger.success('SYSTEM', `پل ارتباطی هوشمند با موفقیت متصل شد (${url} - تاخیر: ${this.latencyMs}ms). استعلام‌های واقعی بانک پاسارگاد و بانک مرکزی فعال هستند.`);
+          }
+
+          this.updateStatusBadge(true);
+          return true;
         }
-        return true;
+      } catch (e) {
+        // continue candidate loop
       }
-    } catch (e) {
-      this.isLocalBackendConnected = false;
     }
+
+    this.isLocalBackendConnected = false;
+    this.updateStatusBadge(false);
     return false;
   }
 
+  updateStatusBadge(connected) {
+    const badge = document.getElementById('backend-status-badge');
+    if (!badge) return;
+
+    if (connected) {
+      badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-mono cursor-pointer hover:bg-emerald-500/20 transition';
+      badge.innerHTML = `
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-emerald-300 font-bold">موتور هوشمند متصل است</span>
+        <span class="text-[10px] text-emerald-400/80">(${this.latencyMs}ms)</span>
+      `;
+      badge.setAttribute('title', `متصل به سرور محلی ${this.localBackendUrl} - کلیک جهت تنظیمات`);
+    } else {
+      badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs font-mono cursor-pointer hover:bg-amber-500/20 transition';
+      badge.innerHTML = `
+        <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+        <span class="text-amber-300 font-semibold">موتور محلی آفلاین (run.bat)</span>
+      `;
+      badge.setAttribute('title', `ارتباط با سرور پایتون برقرار نیست. جهت استعلام واقعی فایل run.bat را اجرا کنید. کلیک جهت تنظیمات`);
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────
-  // 🏛️ Central Bank (CBI) Inquiry Pipeline
+  // 🏛️ Central Bank (CBI) Live Inquiry
   // ─────────────────────────────────────────────────────────────
   async queryCBI(sayadiId) {
     const cleanSayadi = String(sayadiId || '').trim();
@@ -75,50 +132,46 @@ class PasargadEngine {
       throw new Error(`شناسه صیادی نامعتبر است (${cleanSayadi})`);
     }
 
-    window.AppLogger.info('CBI', `در حال استعلام وضعیت اعتباری صیادی ${cleanSayadi} از سامانه بانک مرکزی...`);
+    window.AppLogger.info('CBI', `در حال استعلام وضعیت اعتباری صیادی ${cleanSayadi} از بانک مرکزی...`);
 
-    // If local backend is connected, use Python CBI service
-    if (this.isLocalBackendConnected) {
+    // If local bridge is connected, perform live query
+    if (this.isLocalBackendConnected || (await this.checkLocalBackend())) {
       try {
         const resp = await fetch(`${this.localBackendUrl}/api/inquiries/cbi?sayadi_id=${cleanSayadi}`);
         if (resp.ok) {
           const res = await resp.json();
-          window.AppLogger.success('CBI', `استعلام بانک مرکزی با موفقیت انجام شد: رنگ اعتباری ${res.credit_color}`);
+          window.AppLogger.success('CBI', `استعلام بانک مرکزی برای صیادی ${cleanSayadi} با موفقیت ثبت شد: رنگ اعتباری ${res.credit_color}`);
           return res;
         }
       } catch (err) {
-        window.AppLogger.warn('CBI', `خطا در ارتباط با اندپوینت محلی CBI: ${err.message}`);
+        window.AppLogger.warn('CBI', `خطا در ارتباط با سرور محلی: ${err.message}`);
       }
     }
 
-    // Client-side fallback from existing database records
+    // Fallback if offline
     const cust = App.state.customers.find(c => {
       const chs = App.state.cheques.filter(ch => ch.customer_id === c.id);
       return chs.some(ch => ch.sayadi_id === cleanSayadi);
     });
 
     const creditColor = cust ? cust.credit_color : 'سفید';
-    const result = {
+    return {
       status: 'success',
       sayadi_id: cleanSayadi,
       full_name: cust ? cust.full_name : 'شناسایی‌شده',
       credit_color: creditColor,
       source: 'database_verified',
-      message: `استعلام معتبر بانک مرکزی: وضعیت ${creditColor}`
+      message: `وضعیت اعتباری بانک مرکزی: ${creditColor}`
     };
-
-    window.AppLogger.success('CBI', `استعلام صیادی ${cleanSayadi} ثبت شد: وضعیت اعتباری ${creditColor}`);
-    return result;
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 🛡️ Pasargad Bank Inquiry Pipeline
+  // 🛡️ Pasargad Bank Live Inquiry Pipeline
   // ─────────────────────────────────────────────────────────────
   async queryCheque(sayadiId, holderNationalId, options = {}) {
     const cleanSayadi = String(sayadiId || '').trim();
     const cleanIdCode = String(holderNationalId || '').trim();
     const forceRefresh = options.forceRefresh || false;
-    const timeoutMs = options.timeoutMs || 12000;
 
     if (!cleanSayadi || cleanSayadi.length !== 16) {
       const err = `شناسه صیادی نامعتبر است (${cleanSayadi})`;
@@ -132,7 +185,7 @@ class PasargadEngine {
       throw new Error(err);
     }
 
-    // Check in-memory cache
+    // Check cache
     const cacheKey = `${cleanSayadi}_${cleanIdCode}`;
     if (!forceRefresh && this.cache.has(cacheKey)) {
       const cached = this.cache.get(cacheKey);
@@ -142,134 +195,52 @@ class PasargadEngine {
       }
     }
 
-    // 1. Try Local Python Backend first (100% Success Rate - No CORS)
-    if (this.isLocalBackendConnected || (await this.checkLocalBackend())) {
-      try {
-        window.AppLogger.info('PASARGAD', `ارسال درخواست صیادی ${cleanSayadi} به سرور محلی...`);
-        const resp = await fetch(`${this.localBackendUrl}/api/inquiries/pasargad`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sayadi_id: cleanSayadi,
-            holder_id: options.holderId || 1,
-            customer_id: options.customerId || null
-          })
-        });
-
-        if (resp.ok) {
-          const data = await resp.json();
-          const parsedResult = {
-            status: 'success',
-            sayadi_id: cleanSayadi,
-            holder_national_id: cleanIdCode,
-            in_transit_amount: data.in_transit_amount || 0,
-            in_transit_count: data.in_transit_count || 0,
-            cleared_amount: data.cleared_amount || 0,
-            cleared_count: data.cleared_count || 0,
-            bounced_amount: data.bounced_amount || 0,
-            bounced_count: data.bounced_count || 0,
-            owners_info: data.owners_info || [],
-            inquiry_time: new Date().toISOString().replace('T', ' ').slice(0, 19)
-          };
-
-          this.cache.set(cacheKey, { timestamp: Date.now(), data: parsedResult });
-          window.AppLogger.success('PASARGAD', `استعلام مستقیم پاسارگاد با موفقیت ثبت شد: در راه: ${parsedResult.in_transit_amount.toLocaleString('fa-IR')} ریال | برگشتی: ${parsedResult.bounced_amount.toLocaleString('fa-IR')} ریال`);
-          return parsedResult;
-        }
-      } catch (backendErr) {
-        window.AppLogger.warn('PASARGAD', `خطا در سرور محلی: ${backendErr.message}. سوییچ به پایپ‌لاین پروکسی...`);
-      }
+    // Ensure Local Python Engine Bridge is active
+    if (!this.isLocalBackendConnected) {
+      await this.checkLocalBackend();
     }
 
-    // 2. Multi-Proxy Web Fallback Pipeline
-    const rawApiUrl = `https://sec.bpi.ir/prls/api/v1/inquiry/chequeStatus?IdCode=${cleanIdCode}&IdType=1&SayadId=${cleanSayadi}`;
-    let lastError = null;
+    if (this.isLocalBackendConnected) {
+      window.AppLogger.info('PASARGAD', `ارسال درخواست استعلام صیادی ${cleanSayadi} به موتور پایتون...`);
+      const resp = await fetch(`${this.localBackendUrl}/api/inquiries/pasargad`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sayadi_id: cleanSayadi,
+          holder_id: options.holderId || 1,
+          customer_id: options.customerId || null
+        })
+      });
 
-    for (let pIdx = 0; pIdx < this.proxies.length; pIdx++) {
-      const proxy = this.proxies[pIdx];
-      const targetUrl = proxy.format(rawApiUrl);
-
-      try {
-        window.AppLogger.info('PASARGAD', `ارسال درخواست صیادی ${cleanSayadi} از طریق [${proxy.name}]...`);
-        
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-        const response = await fetch(targetUrl, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json, text/plain, */*' },
-          signal: controller.signal
-        });
-
-        clearTimeout(timeout);
-
-        if (!response.ok) {
-          throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
-        }
-
-        const rawText = await response.text();
-        let data = null;
-
-        try {
-          data = JSON.parse(rawText);
-        } catch (jsonErr) {
-          const match = rawText.match(/\{[\s\S]*\}/);
-          if (match) data = JSON.parse(match[0]);
-          else throw new Error(`فرمت پاسخ JSON معتبر نبود`);
-        }
-
-        if (data) {
-          const parsedResult = this.parsePasargadResponse(data, cleanSayadi, cleanIdCode);
-          this.cache.set(cacheKey, { timestamp: Date.now(), data: parsedResult });
-          window.AppLogger.success('PASARGAD', `استعلام پاسارگاد برای ${cleanSayadi} موفق بود.`);
-          return parsedResult;
-        }
-
-      } catch (err) {
-        lastError = err;
-        window.AppLogger.warn('PASARGAD', `عدم موفقیت با [${proxy.name}] برای ${cleanSayadi}: ${err.message}`);
-        await this.delay(200);
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.detail || `خطای سرور محلی (کد ${resp.status})`);
       }
+
+      const data = await resp.json();
+      const parsedResult = {
+        status: 'success',
+        sayadi_id: cleanSayadi,
+        holder_national_id: cleanIdCode,
+        in_transit_amount: data.in_transit_amount || 0,
+        in_transit_count: data.in_transit_count || 0,
+        cleared_amount: data.cleared_amount || 0,
+        cleared_count: data.cleared_count || 0,
+        bounced_amount: data.bounced_amount || 0,
+        bounced_count: data.bounced_count || 0,
+        owners_info: data.owners_info || [],
+        inquiry_time: new Date().toISOString().replace('T', ' ').slice(0, 19)
+      };
+
+      this.cache.set(cacheKey, { timestamp: Date.now(), data: parsedResult });
+      window.AppLogger.success('PASARGAD', `استعلام زنده پاسارگاد برای صیادی ${cleanSayadi} با موفقیت ثبت شد. (در راه: ${parsedResult.in_transit_amount.toLocaleString('fa-IR')} ریال | برگشتی: ${parsedResult.bounced_amount.toLocaleString('fa-IR')} ریال)`);
+      return parsedResult;
     }
 
-    const finalErrMsg = `خطا در استعلام پاسارگاد برای صیادی ${cleanSayadi}: ${lastError ? lastError.message : 'پاسخی دریافت نشد'}`;
-    window.AppLogger.error('PASARGAD', finalErrMsg);
-    throw new Error(finalErrMsg);
-  }
-
-  parsePasargadResponse(data, sayadiId, holderNationalId) {
-    const onGoing = parseFloat(data.onGoingAmount || 0);
-    const blocked = parseFloat(data.blocked || 0);
-    const owners = data.ownersInfo || [];
-
-    let totalBounced = 0;
-    let totalCleared = 0;
-    let bouncedCount = 0;
-    let clearedCount = 0;
-
-    owners.forEach(o => {
-      const b = parseFloat(o.bouncedAmount || 0);
-      const c = parseFloat(o.clearedAmount || 0);
-      totalBounced += b;
-      totalCleared += c;
-      if (b > 0) bouncedCount++;
-      if (c > 0) clearedCount++;
-    });
-
-    return {
-      status: 'success',
-      sayadi_id: sayadiId,
-      holder_national_id: holderNationalId,
-      in_transit_amount: onGoing,
-      in_transit_count: onGoing > 0 ? 1 : 0,
-      cleared_amount: totalCleared,
-      cleared_count: clearedCount,
-      bounced_amount: totalBounced,
-      bounced_count: bouncedCount,
-      blocked_amount: blocked,
-      owners_info: owners,
-      inquiry_time: new Date().toISOString().replace('T', ' ').slice(0, 19)
-    };
+    // If local bridge is not running, prompt user
+    const offlineMsg = `موتور استعلام پایتون آفلاین است. لطفاً فایل run.bat را روی سیستم خود اجرا کنید تا استعلام زنده دریافت شود.`;
+    window.AppLogger.warn('PASARGAD', offlineMsg);
+    throw new Error(offlineMsg);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -280,8 +251,16 @@ class PasargadEngine {
       throw new Error('یک فرآیند استعلام گروهی در حال اجرا است.');
     }
 
+    // Ensure backend is connected
+    if (!this.isLocalBackendConnected) {
+      await this.checkLocalBackend();
+      if (!this.isLocalBackendConnected) {
+        throw new Error('موتور استعلام پایتون آفلاین است. لطفاً فایل run.bat را اجرا کنید.');
+      }
+    }
+
     const concurrency = options.concurrency || 3;
-    const delayBetweenRequests = options.delayMs || 250;
+    const delayBetweenRequests = options.delayMs || 200;
     const onProgress = callbacks.onProgress || (() => {});
     const onItemComplete = callbacks.onItemComplete || (() => {});
     const onFinished = callbacks.onFinished || (() => {});
@@ -299,7 +278,7 @@ class PasargadEngine {
       bouncedSum: 0
     };
 
-    window.AppLogger.batch('BATCH', `آغاز استعلام گروهی ${items.length} فقره چک با ${concurrency} فرآیند موازی...`);
+    window.AppLogger.batch('BATCH', `آغاز استعلام موازی سبد مشتریان (${items.length} فقره چک) از طریق پل هوشمند...`);
 
     const queue = [...items];
     const results = [];
@@ -320,13 +299,12 @@ class PasargadEngine {
         if (!holder || !holder.national_id) {
           this.batchState.processed++;
           this.batchState.errorCount++;
-          window.AppLogger.warn('BATCH', `چک صیادی ${item.sayadi_id} فاقد دارنده معتبر است.`);
           onProgress({ ...this.batchState, currentItem: item });
           continue;
         }
 
         try {
-          await this.delay(delayBetweenRequests + Math.floor(Math.random() * 150));
+          await this.delay(delayBetweenRequests + Math.floor(Math.random() * 100));
 
           const res = await this.queryCheque(item.sayadi_id, holder.national_id, {
             forceRefresh: options.forceRefresh,
@@ -347,7 +325,7 @@ class PasargadEngine {
           this.batchState.processed++;
           this.batchState.errorCount++;
           results.push({ item, error: err.message, status: 'error' });
-          window.AppLogger.error('BATCH', `خطا در استعلام چک صیادی ${item.sayadi_id}: ${err.message}`);
+          window.AppLogger.error('BATCH', `خطا در استعلام صیادی ${item.sayadi_id}: ${err.message}`);
         }
 
         onProgress({ ...this.batchState, currentItem: item });
@@ -362,7 +340,7 @@ class PasargadEngine {
     await Promise.all(workers);
 
     this.batchState.isRunning = false;
-    window.AppLogger.batch('BATCH', `پایان استعلام گروهی. موفق: ${this.batchState.successCount} | ناموفق: ${this.batchState.errorCount} | مجموع در راه: ${this.batchState.inTransitSum.toLocaleString('fa-IR')} ریال | برگشتی: ${this.batchState.bouncedSum.toLocaleString('fa-IR')} ریال`);
+    window.AppLogger.batch('BATCH', `پایان استعلام گروهی سبد مشتریان. موفق: ${this.batchState.successCount} | ناموفق: ${this.batchState.errorCount} | در راه: ${this.batchState.inTransitSum.toLocaleString('fa-IR')} ریال | برگشتی: ${this.batchState.bouncedSum.toLocaleString('fa-IR')} ریال`);
 
     onFinished({ ...this.batchState, results });
     return results;
@@ -426,7 +404,7 @@ class PasargadEngine {
       const ms = this.scheduler.intervalHours * 60 * 60 * 1000;
       this.scheduler.nextRun = new Date(Date.now() + ms);
 
-      window.AppLogger.info('SCHEDULER', `زمان‌بندی خودکار استعلام فعال شد (هر ${this.scheduler.intervalHours} ساعت یکبار). زمان اجرای بعدی: ${this.scheduler.nextRun.toLocaleTimeString('fa-IR')}`);
+      window.AppLogger.info('SCHEDULER', `زمان‌بندی خودکار استعلام فعال شد (هر ${this.scheduler.intervalHours} ساعت یکبار).`);
 
       this.scheduler.timerId = setInterval(() => {
         this.scheduler.lastRun = new Date().toISOString();

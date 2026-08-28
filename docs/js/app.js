@@ -791,8 +791,82 @@ const App = {
 
 
   // ─────────────────────────────────────────────────────────────
+  // 🔌 Bridge Settings Modal Actions
+  // ─────────────────────────────────────────────────────────────
+  openBridgeSettingsModal() {
+    const input = document.getElementById('bridge-url-input');
+    if (input) input.value = window.PasargadInquiryEngine.localBackendUrl;
+    this.updateBridgeModalStatus();
+    document.getElementById('bridge-settings-modal').classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  },
+
+  closeBridgeSettingsModal() {
+    document.getElementById('bridge-settings-modal').classList.add('hidden');
+  },
+
+  async testBridgeConnection() {
+    const input = document.getElementById('bridge-url-input');
+    const statusText = document.getElementById('bridge-modal-status-text');
+    const testBtn = document.getElementById('btn-test-bridge');
+    
+    if (testBtn) {
+      testBtn.disabled = true;
+      testBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> در حال تست اتصال...`;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    const targetUrl = input ? input.value : 'http://127.0.0.1:8000';
+    window.PasargadInquiryEngine.localBackendUrl = targetUrl;
+    const ok = await window.PasargadInquiryEngine.checkLocalBackend();
+
+    if (testBtn) {
+      testBtn.disabled = false;
+      testBtn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4"></i> تست مجدد اتصال`;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    this.updateBridgeModalStatus();
+
+    if (ok) {
+      this.showToast('ارتباط با سرور پایتون برقرار است! (استعلام زنده فعال شد)', 'success');
+    } else {
+      this.showToast('ارتباط برقرار نشد. مطمئن شوید run.bat اجرا شده است.', 'error');
+    }
+  },
+
+  async saveBridgeSettings() {
+    const input = document.getElementById('bridge-url-input');
+    const url = input ? input.value : 'http://127.0.0.1:8000';
+    await window.PasargadInquiryEngine.setBackendUrl(url);
+    this.closeBridgeSettingsModal();
+    this.showToast('تنظیمات پل ارتباطی ذخیره گردید.', 'success');
+  },
+
+  updateBridgeModalStatus() {
+    const isConn = window.PasargadInquiryEngine.isLocalBackendConnected;
+    const statusBox = document.getElementById('bridge-modal-status-box');
+    const statusText = document.getElementById('bridge-modal-status-text');
+    const latencyText = document.getElementById('bridge-modal-latency');
+
+    if (statusBox && statusText) {
+      if (isConn) {
+        statusBox.className = 'p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between';
+        statusText.innerHTML = `<span class="flex items-center gap-2 text-emerald-400 font-bold text-xs"><i data-lucide="check-circle" class="w-4 h-4"></i> وضعیت: متصل به موتور پایتون</span>`;
+        if (latencyText) latencyText.innerText = `تاخیر: ${window.PasargadInquiryEngine.latencyMs}ms`;
+      } else {
+        statusBox.className = 'p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between';
+        statusText.innerHTML = `<span class="flex items-center gap-2 text-amber-400 font-bold text-xs"><i data-lucide="alert-circle" class="w-4 h-4"></i> وضعیت: آفلاین (run.bat را باز کنید)</span>`;
+        if (latencyText) latencyText.innerText = 'قطع ارتباط';
+      }
+      if (window.lucide) lucide.createIcons();
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
   // ⚡ Bulk Portfolio Inquiry Actions
   // ─────────────────────────────────────────────────────────────
+
   openBulkInquiryModal() {
     const modal = document.getElementById('bulk-inquiry-modal');
     document.getElementById('bulk-total-count').innerText = this.state.cheques.length.toLocaleString('fa-IR');

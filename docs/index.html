@@ -134,7 +134,7 @@
 
       <!-- Quick Action Buttons -->
       <div class="flex items-center gap-3">
-        <div id="backend-status-badge" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-700/50 text-xs font-mono">
+        <div id="backend-status-badge" onclick="App.openBridgeSettingsModal()" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-700/50 text-xs font-mono cursor-pointer hover:border-blue-500/50 transition" title="تنظیمات پل ارتباطی هوشمند">
           <span class="w-2 h-2 rounded-full bg-amber-400"></span>
           <span class="text-slate-300">موتور هوشمند فعال</span>
         </div>
@@ -143,6 +143,7 @@
           <i data-lucide="zap" class="w-4 h-4 text-amber-300 animate-pulse"></i>
           <span class="hidden sm:inline">استعلام کلی سبد</span>
         </button>
+
 
 
         <button onclick="App.openAddCustomerModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
@@ -886,7 +887,55 @@
     </div>
   </div>
 
+  <!-- ─────────────────────────────────────────────────────────────
+       🔌 Modal: Hybrid Bridge Settings
+       ───────────────────────────────────────────────────────────── -->
+  <div id="bridge-settings-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="glass-card w-full max-w-md rounded-3xl p-6 shadow-2xl animate-fade-in space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <i data-lucide="radio" class="w-4 h-4"></i>
+          </div>
+          <h3 class="font-bold text-base">تنظیمات پل ارتباطی هوشمند (موتور پایتون)</h3>
+        </div>
+        <button onclick="App.closeBridgeSettingsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <p class="text-xs text-slate-400 leading-relaxed">
+        این بخش برای اتصال مستقیم وب‌اپلیکیشن به موتور استعلام پایتون روی لپ‌تاپ یا سرور محلی شماست تا بدون هیچ خطایی استعلام‌های زنده پاسارگاد و بانک مرکزی دریافت شوند.
+      </p>
+
+      <!-- Live Status Box in Modal -->
+      <div id="bridge-modal-status-box" class="p-3 bg-slate-900/60 border border-slate-700/50 rounded-2xl flex items-center justify-between">
+        <div id="bridge-modal-status-text" class="text-xs text-slate-300">در حال بررسی...</div>
+        <div id="bridge-modal-latency" class="text-[11px] font-mono text-slate-400">---</div>
+      </div>
+
+      <div class="space-y-2">
+        <label class="block text-xs font-semibold">آدرس موتور پایتون (Backend URL):</label>
+        <input id="bridge-url-input" type="text" placeholder="http://127.0.0.1:8000" class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
+        <p class="text-[11px] text-slate-500">
+          برای گوشی: اگر با گوشی به همان وای‌فای وصل هستید، IP لپ‌تاپ را وارد کنید (مثلاً: <span class="font-mono text-blue-400">http://192.168.1.5:8000</span>).
+        </p>
+      </div>
+
+      <div class="flex items-center justify-between pt-3 border-t border-slate-700/60">
+        <button id="btn-test-bridge" onclick="App.testBridgeConnection()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-semibold flex items-center gap-1.5 transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          تست مجدد اتصال
+        </button>
+
+        <div class="flex items-center gap-2">
+          <button onclick="App.closeBridgeSettingsModal()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-semibold transition">بستن</button>
+          <button onclick="App.saveBridgeSettings()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-xs font-bold shadow-lg transition">ذخیره آدرس</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- App Script -->
   <script src="js/app.js"></script>
 </body>
 </html>
+
