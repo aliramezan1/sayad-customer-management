@@ -623,11 +623,12 @@
         </div>
 
         <div>
-          <label class="block text-xs font-semibold mb-1.5">تعداد فرآیندهای موازی (Concurrency):</label>
+          <label class="block text-xs font-semibold mb-1.5">سرعت و فرآیندهای موازی (Concurrency):</label>
           <select id="bulk-concurrency-select" class="w-full rounded-2xl px-3.5 py-2 text-xs focus:outline-none">
-            <option value="2">۲ فرآیند موازی (امن و آرام)</option>
-            <option value="3" selected>۳ فرآیند موازی (پیشنهادی و پرسرعت)</option>
-            <option value="5">۵ فرآیند موازی (حداکثر سرعت)</option>
+            <option value="1">۱ فرآیند (حالت فوق‌امن و مطمئن - ۱۰۰٪ ضد بلاک)</option>
+            <option value="2" selected>۲ فرآیند موازی (پیشنهادی و هوشمند - بهینه)</option>
+            <option value="3">۳ فرآیند موازی (سریع)</option>
+            <option value="4">۴ فرآیند موازی (حداکثر سرعت)</option>
           </select>
         </div>
       </div>
@@ -662,6 +663,23 @@
             <div class="text-[10px] text-slate-400">برگشتی (ریال)</div>
             <div id="bulk-stat-bounced" class="font-bold text-rose-400 text-xs truncate">۰</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Smart Retry Prompt Card (Appears if errors occur) -->
+      <div id="bulk-retry-prompt-box" class="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-3 hidden animate-fade-in">
+        <div class="flex items-center gap-2 text-amber-300 text-xs font-bold">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 shrink-0"></i>
+          <span>تعداد <span id="bulk-failed-count-display" class="font-mono text-amber-200">۰</span> فقره چک به دلیل ترافیک لحظه‌ای سرور بانک ناموفق شد.</span>
+        </div>
+        <p class="text-[11px] text-slate-300">
+          پیشنهاد سیستم: می‌توانید با کلیک روی دکمه زیر، فقط همین موارد ناموفق را با سرعت ایمن (Safe Mode) به‌صورت خودکار مجدداً استعلام بگیرید تا ۱۰۰٪ ثبت شوند.
+        </p>
+        <div class="flex justify-end">
+          <button onclick="App.retryFailedBatch()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-lg flex items-center gap-1.5 transition">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5 animate-spin"></i>
+            <span>استعلام مجدد موارد ناموفق در حالت امن (توصیه می‌شود)</span>
+          </button>
         </div>
       </div>
 

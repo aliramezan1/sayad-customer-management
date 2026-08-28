@@ -259,8 +259,8 @@ class PasargadEngine {
       }
     }
 
-    const concurrency = options.concurrency || 3;
-    const delayBetweenRequests = options.delayMs || 200;
+    const concurrency = options.concurrency || 2;
+    const baseDelay = options.delayMs || 350;
     const onProgress = callbacks.onProgress || (() => {});
     const onItemComplete = callbacks.onItemComplete || (() => {});
     const onFinished = callbacks.onFinished || (() => {});
@@ -275,13 +275,15 @@ class PasargadEngine {
       errorCount: 0,
       inTransitSum: 0,
       clearedSum: 0,
-      bouncedSum: 0
+      bouncedSum: 0,
+      failedItems: []
     };
 
-    window.AppLogger.batch('BATCH', `آغاز استعلام موازی سبد مشتریان (${items.length} فقره چک) از طریق پل هوشمند...`);
+    window.AppLogger.batch('BATCH', `آغاز استعلام موازی سبد مشتریان (${items.length} فقره چک) با ${concurrency} فرآیند موازی و تاخیر بهینه...`);
 
     const queue = [...items];
     const results = [];
+    let dynamicDelay = baseDelay;
 
     const worker = async (workerId) => {
       while (queue.length > 0) {
@@ -299,12 +301,13 @@ class PasargadEngine {
         if (!holder || !holder.national_id) {
           this.batchState.processed++;
           this.batchState.errorCount++;
+          this.batchState.failedItems.push({ item, reason: 'فاقد دارنده معتبر' });
           onProgress({ ...this.batchState, currentItem: item });
           continue;
         }
 
         try {
-          await this.delay(delayBetweenRequests + Math.floor(Math.random() * 100));
+          await this.delay(dynamicDelay + Math.floor(Math.random() * 150));
 
           const res = await this.queryCheque(item.sayadi_id, holder.national_id, {
             forceRefresh: options.forceRefresh,
@@ -318,14 +321,22 @@ class PasargadEngine {
           this.batchState.clearedSum += res.cleared_amount;
           this.batchState.bouncedSum += res.bounced_amount;
 
+          // Slightly reduce dynamic delay on consecutive successes
+          dynamicDelay = Math.max(baseDelay, dynamicDelay - 20);
+
           results.push({ item, result: res, status: 'success' });
           onItemComplete(item, res);
 
         } catch (err) {
           this.batchState.processed++;
           this.batchState.errorCount++;
+          this.batchState.failedItems.push({ item, reason: err.message });
+          
+          // Adaptive throttling: increase delay on error to give bank server breathing room
+          dynamicDelay = Math.min(1500, dynamicDelay + 250);
+          window.AppLogger.warn('BATCH', `خطا در استعلام صیادی ${item.sayadi_id} (${err.message}). افزایش تاخیر امنیتی به ${dynamicDelay}ms...`);
+          
           results.push({ item, error: err.message, status: 'error' });
-          window.AppLogger.error('BATCH', `خطا در استعلام صیادی ${item.sayadi_id}: ${err.message}`);
         }
 
         onProgress({ ...this.batchState, currentItem: item });
@@ -340,11 +351,32 @@ class PasargadEngine {
     await Promise.all(workers);
 
     this.batchState.isRunning = false;
-    window.AppLogger.batch('BATCH', `پایان استعلام گروهی سبد مشتریان. موفق: ${this.batchState.successCount} | ناموفق: ${this.batchState.errorCount} | در راه: ${this.batchState.inTransitSum.toLocaleString('fa-IR')} ریال | برگشتی: ${this.batchState.bouncedSum.toLocaleString('fa-IR')} ریال`);
+    window.AppLogger.batch('BATCH', `پایان استعلام گروهی. موفق: ${this.batchState.successCount} | ناموفق: ${this.batchState.errorCount} | در راه: ${this.batchState.inTransitSum.toLocaleString('fa-IR')} ریال | برگشتی: ${this.batchState.bouncedSum.toLocaleString('fa-IR')} ریال`);
 
     onFinished({ ...this.batchState, results });
     return results;
   }
+
+  async runRetryFailed(holderMap, callbacks = {}) {
+    const failedQueue = this.batchState.failedItems.map(f => f.item);
+    if (failedQueue.length === 0) {
+      throw new Error('موردی برای استعلام مجدد وجود ندارد.');
+    }
+
+    window.AppLogger.info('BATCH', `شروع استعلام مجدد هوشمند ${failedQueue.length} فقره چک ناموفق در حالت امن (Safe Mode - تک‌فرآیندی)...`);
+
+    return this.runBatchInquiry(
+      failedQueue,
+      holderMap,
+      {
+        concurrency: 1, // Single worker for maximum safety
+        delayMs: 650,   // Ample spacing between calls
+        forceRefresh: true
+      },
+      callbacks
+    );
+  }
+
 
   pauseBatch() {
     this.batchState.isPaused = true;

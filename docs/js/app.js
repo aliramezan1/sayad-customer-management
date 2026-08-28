@@ -955,10 +955,86 @@ const App = {
           App.saveData();
         },
         onFinished: (summary) => {
-          progressText.innerText = `عملیات استعلام به پایان رسید! (${summary.successCount} موفق، ${summary.errorCount} ناموفق)`;
           document.getElementById('btn-pause-bulk').classList.add('hidden');
           document.getElementById('btn-resume-bulk').classList.add('hidden');
-          App.showToast('استعلام دسته‌جمعی سبد مشتریان با موفقیت انجام شد.', 'success');
+
+          if (summary.errorCount > 0 && summary.failedItems && summary.failedItems.length > 0) {
+            progressText.innerHTML = `<span class="text-amber-400 font-bold">پایان مرحله اول: ${summary.successCount} موفق | ${summary.errorCount} ناموفق (ترافیک بانک)</span>`;
+            const retryBox = document.getElementById('bulk-retry-prompt-box');
+            if (retryBox) {
+              retryBox.classList.remove('hidden');
+              document.getElementById('bulk-failed-count-display').innerText = summary.errorCount.toLocaleString('fa-IR');
+            }
+            App.showToast(`استعلام پایان یافت. ${summary.errorCount} مورد نیاز به بازتلاش امن دارند.`, 'warn');
+          } else {
+            progressText.innerText = `عملیات استعلام با موفقیت ۱۰۰٪ به پایان رسید! (${summary.successCount} موفق)`;
+            const retryBox = document.getElementById('bulk-retry-prompt-box');
+            if (retryBox) retryBox.classList.add('hidden');
+            App.showToast('استعلام دسته‌جمعی سبد مشتریان با موفقیت ۱۰۰٪ انجام شد.', 'success');
+          }
+
+          App.renderCurrentView();
+        }
+      }
+    );
+  },
+
+  async retryFailedBatch() {
+    const holderId = parseInt(document.getElementById('bulk-holder-select').value);
+    const defaultHolder = this.state.holders.find(h => h.id === holderId) || this.state.holders[0];
+    const holderMap = {};
+    this.state.holders.forEach(h => { holderMap[h.id] = h; });
+
+    const retryBox = document.getElementById('bulk-retry-prompt-box');
+    if (retryBox) retryBox.classList.add('hidden');
+
+    const progressBar = document.getElementById('bulk-progress-bar');
+    const progressPercent = document.getElementById('bulk-progress-percent');
+    const progressText = document.getElementById('bulk-progress-text');
+
+    progressText.innerText = 'در حال استعلام مجدد موارد ناموفق با سرعت بهینه و ضد بلاک...';
+
+    await window.PasargadInquiryEngine.runRetryFailed(
+      holderMap,
+      {
+        onProgress: (state) => {
+          const pct = Math.round((state.processed / state.total) * 100) || 0;
+          progressBar.style.width = `${pct}%`;
+          progressPercent.innerText = `${pct.toLocaleString('fa-IR')}٪`;
+          progressText.innerText = `در حال بررسی امن چک ${state.processed.toLocaleString('fa-IR')} از ${state.total.toLocaleString('fa-IR')}...`;
+
+          document.getElementById('bulk-stat-success').innerText = (parseInt(document.getElementById('bulk-stat-success').innerText) + state.successCount).toLocaleString('fa-IR');
+          document.getElementById('bulk-stat-error').innerText = state.errorCount.toLocaleString('fa-IR');
+          document.getElementById('bulk-stat-in-transit').innerText = App.formatMoney(state.inTransitSum);
+          document.getElementById('bulk-stat-bounced').innerText = App.formatMoney(state.bouncedSum);
+        },
+        onItemComplete: (item, res) => {
+          const inquiryRecord = {
+            id: Date.now() + Math.random(),
+            sayadi_id: item.sayadi_id,
+            holder_id: item.holder_id || defaultHolder.id,
+            customer_id: item.customer_id,
+            in_transit_amount: res.in_transit_amount,
+            in_transit_count: res.in_transit_count,
+            cleared_amount: res.cleared_amount,
+            cleared_count: res.cleared_count,
+            bounced_amount: res.bounced_amount,
+            bounced_count: res.bounced_count,
+            inquiry_time: res.inquiry_time,
+            status: 'success'
+          };
+
+          const existingIdx = App.state.inquiries.findIndex(i => i.sayadi_id === item.sayadi_id);
+          if (existingIdx >= 0) {
+            App.state.inquiries[existingIdx] = inquiryRecord;
+          } else {
+            App.state.inquiries.push(inquiryRecord);
+          }
+          App.saveData();
+        },
+        onFinished: (summary) => {
+          progressText.innerText = `استعلام مجدد به پایان رسید! (${summary.successCount} مورد بازیابی و با موفقیت ثبت شد)`;
+          App.showToast('موارد ناموفق با موفقیت استعلام شدند.', 'success');
           App.renderCurrentView();
         }
       }
@@ -977,6 +1053,7 @@ const App = {
     document.getElementById('btn-resume-bulk').classList.add('hidden');
     document.getElementById('btn-pause-bulk').classList.remove('hidden');
   },
+
 
   // ─────────────────────────────────────────────────────────────
   // 👥 Dynamic Holders Management (CRUD)
