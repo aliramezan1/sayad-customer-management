@@ -1,0 +1,44 @@
+# Python & Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.env
+.venv
+env/
+venv/
+
+# Database journals & Logs
+*.sqlite3-journal
+*.log
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Large binaries & Drivers
+chromedriver/
+*.exe
+
+# Debug & Temporary captures
+*.png
+*.jpg
+*.jpeg
+captcha_samples/
+*.html.download
+*.axd
+*.axd.*
+*debug*
+*inspect*
+*capture*
+*sample*
+*test_submit*
+*cbi_*
+*perfect_success*
+*actual_success*
+*bottom_result*
+*current_page*
+*.pac
+
+# Old offline raw saved pages
+*استعلام وضعيت اعتباری چک صيادی*
