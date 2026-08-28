@@ -68,11 +68,17 @@
           <span>تمام چک‌های صیادی</span>
         </button>
 
+        <button onclick="App.switchTab('cbi')" data-tab="cbi" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
+          <i data-lucide="landmark" class="w-5 h-5"></i>
+          <span>استعلام بانک مرکزی</span>
+        </button>
+
         <button onclick="App.switchTab('pasargad')" data-tab="pasargad" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="building-2" class="w-5 h-5"></i>
           <span>استعلام پاسارگاد</span>
         </button>
       </nav>
+
     </div>
 
     <!-- Bottom Actions & Utilities -->
@@ -128,10 +134,16 @@
 
       <!-- Quick Action Buttons -->
       <div class="flex items-center gap-3">
+        <div id="backend-status-badge" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-700/50 text-xs font-mono">
+          <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+          <span class="text-slate-300">موتور هوشمند فعال</span>
+        </div>
+
         <button onclick="App.openBulkInquiryModal()" class="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-2xl text-sm font-bold flex items-center gap-2 shadow-lg transition">
           <i data-lucide="zap" class="w-4 h-4 text-amber-300 animate-pulse"></i>
           <span class="hidden sm:inline">استعلام کلی سبد</span>
         </button>
+
 
         <button onclick="App.openAddCustomerModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
           <i data-lucide="user-plus" class="w-4 h-4"></i>
@@ -520,6 +532,64 @@
           </div>
         </div>
       </section>
+
+      <!-- ═════════════════════════════════════════════════════════════
+           TAB 5: Central Bank (CBI) Dedicated View
+           ═════════════════════════════════════════════════════════════ -->
+      <section id="view-cbi" class="tab-view hidden space-y-6">
+        <div class="glass-card p-6 border border-indigo-500/30 bg-gradient-to-br from-indigo-950/20 to-slate-900/60">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+              <i data-lucide="landmark" class="w-6 h-6"></i>
+            </div>
+            <div>
+              <h2 class="text-xl font-bold">سامانه رسمی استعلام وضعیت اعتباری چک صیادی (بانک مرکزی جمهوری اسلامی ایران)</h2>
+              <p class="text-xs text-slate-400">استعلام رتبه اعتباری، رنگ چک (سفید، زرد، نارنجی، قهوه‌ای، قرمز) و سوابق برگشتی از CBI</p>
+            </div>
+          </div>
+
+          <!-- CBI Inquiry Form -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1.5">کد شناسه ۱۶ رقمی صیادی:</label>
+              <input id="cbi-sayadi-input" type="text" maxlength="16" placeholder="مثلاً: 5080030099110169" class="w-full rounded-2xl px-4 py-2.5 text-sm font-mono focus:outline-none">
+            </div>
+
+            <div class="flex items-end">
+              <button id="btn-submit-cbi" onclick="App.submitCBIInquiry()" class="w-full py-2.5 px-6 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl text-sm shadow-xl flex items-center justify-center gap-2 transition">
+                <i data-lucide="shield-check" class="w-5 h-5"></i>
+                <span>استعلام وضعیت از بانک مرکزی (CBI)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CBI Result Box -->
+        <div id="cbi-result-card" class="glass-card p-6 border border-indigo-500/30 bg-indigo-500/5 hidden animate-fade-in space-y-4">
+          <h3 class="text-base font-bold text-indigo-400 flex items-center gap-2">
+            <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+            نتیجه استعلام وضعیت اعتباری صادرکننده چک از بانک مرکزی
+          </h3>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="p-4 bg-slate-900/50 rounded-2xl border border-slate-700/40">
+              <div class="text-xs text-slate-400 mb-1">صاحب حساب / صادرکننده:</div>
+              <div id="res-cbi-name" class="font-bold text-base">---</div>
+            </div>
+
+            <div class="p-4 bg-slate-900/50 rounded-2xl border border-slate-700/40">
+              <div class="text-xs text-slate-400 mb-1">رنگ و وضعیت اعتباری صیاد:</div>
+              <div id="res-cbi-badge" class="mt-1">---</div>
+            </div>
+
+            <div class="p-4 bg-slate-900/50 rounded-2xl border border-slate-700/40">
+              <div class="text-xs text-slate-400 mb-1">مرجع تایید استعلام:</div>
+              <div id="res-cbi-source" class="font-mono text-xs text-slate-300">بانک مرکزی جمهوری اسلامی ایران</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
 
     </main>
   </div>

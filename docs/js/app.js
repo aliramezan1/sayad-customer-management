@@ -735,6 +735,62 @@ const App = {
   },
 
   // ─────────────────────────────────────────────────────────────
+  // 🏛️ Live Central Bank (CBI) Inquiry Action
+  // ─────────────────────────────────────────────────────────────
+  openCBISayadiModal(sayadiId) {
+    document.getElementById('cbi-sayadi-input').value = sayadiId || '';
+    document.getElementById('cbi-result-card').classList.add('hidden');
+    this.switchTab('cbi');
+  },
+
+  async submitCBIInquiry() {
+    const sayadiId = document.getElementById('cbi-sayadi-input').value.trim();
+    if (!sayadiId || sayadiId.length !== 16) {
+      this.showToast('لطفاً شناسه صیادی ۱۶ رقمی را به درستی وارد کنید.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btn-submit-cbi');
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> در حال استعلام از بانک مرکزی...`;
+    if (window.lucide) lucide.createIcons();
+
+    try {
+      const res = await window.PasargadInquiryEngine.queryCBI(sayadiId);
+
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="shield-check" class="w-4 h-4"></i> استعلام از بانک مرکزی`;
+      if (window.lucide) lucide.createIcons();
+
+      // Update customer credit color in state
+      const ch = this.state.cheques.find(c => c.sayadi_id === sayadiId);
+      if (ch && ch.customer_id) {
+        const cust = this.state.customers.find(c => c.id === ch.customer_id);
+        if (cust) {
+          cust.credit_color = res.credit_color;
+          this.saveData();
+        }
+      }
+
+      // Show result box
+      const resultCard = document.getElementById('cbi-result-card');
+      resultCard.classList.remove('hidden');
+      document.getElementById('res-cbi-name').innerText = res.full_name || 'تاییدشده';
+      document.getElementById('res-cbi-badge').innerHTML = this.renderCreditBadge(res.credit_color);
+      document.getElementById('res-cbi-source').innerText = res.source === 'cbi_live' ? 'استعلام زنده برخط سامانه صیاد' : 'پایگاه داده استعلام‌شده';
+
+      this.showToast(`استعلام بانک مرکزی با موفقیت انجام شد: ${res.credit_color}`, 'success');
+      this.renderCurrentView();
+
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="shield-check" class="w-4 h-4"></i> استعلام از بانک مرکزی`;
+      this.showToast(`خطا در استعلام بانک مرکزی: ${err.message}`, 'error');
+    }
+  },
+
+
+  // ─────────────────────────────────────────────────────────────
   // ⚡ Bulk Portfolio Inquiry Actions
   // ─────────────────────────────────────────────────────────────
   openBulkInquiryModal() {

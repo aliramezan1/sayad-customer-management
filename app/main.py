@@ -520,6 +520,40 @@ def inquiry_pasargad(data: PasargadInquiryRequest):
     return result
 
 # ─────────────────────────────────────────────────────────────
+# 🏛️ Central Bank of Iran (CBI) Inquiries API
+# ─────────────────────────────────────────────────────────────
+@app.get("/api/inquiries/cbi")
+def inquiry_cbi(sayadi_id: str):
+    """Execute Central Bank (CBI) inquiry for Sayadi ID."""
+    from app.services.cbi import query_cbi_sayad_cheque
+    result = query_cbi_sayad_cheque(sayadi_id)
+    return result
+
+@app.post("/api/inquiries/dual")
+def inquiry_dual(data: PasargadInquiryRequest):
+    """Execute Dual Inquiry: CBI Central Bank + Pasargad Bank in parallel."""
+    from app.services.cbi import query_cbi_sayad_cheque
+    
+    # Run Pasargad
+    pasargad_res = record_pasargad_inquiry(
+        sayadi_id=data.sayadi_id,
+        holder_id=data.holder_id,
+        customer_id=data.customer_id
+    )
+    
+    # Run CBI
+    cbi_res = query_cbi_sayad_cheque(data.sayadi_id)
+    
+    return {
+        "status": "success",
+        "sayadi_id": data.sayadi_id,
+        "pasargad": pasargad_res,
+        "cbi": cbi_res,
+        "message": "استعلام دوگانه بانک مرکزی و بانک پاسارگاد با موفقیت انجام شد."
+    }
+
+
+# ─────────────────────────────────────────────────────────────
 # ⏰ Background Scheduler API
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/scheduler/status")
