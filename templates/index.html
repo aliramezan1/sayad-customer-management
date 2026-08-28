@@ -3,79 +3,112 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>سامانه جامع مدیریت مشتریان و چک‌های صیادی | بانک مرکزی و پاسارگاد</title>
+  <title>سامانه جامع مدیریت مشتریان، چک‌های صیادی و اعتبارسنجی بانکی | صیاد پرو</title>
   
-  <!-- Tailwind CSS CDN -->
+  <!-- Tailwind CSS CDN with Custom Color Support -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: ['selector', '[data-theme="dark"]'],
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Vazirmatn', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Custom Styles & Theme -->
-  <link rel="stylesheet" href="/static/css/style.css">
-  <script src="/static/js/theme.js"></script>
+  <!-- SheetJS for Client-Side Excel Export -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  
+  <!-- Custom Styles & Modules -->
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/theme.js"></script>
+  <script src="js/logger.js"></script>
+  <script src="js/pasargad_engine.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 flex min-h-screen">
+<body class="flex min-h-screen">
 
   <!-- ─────────────────────────────────────────────────────────────
        📱 Sidebar Navigation
        ───────────────────────────────────────────────────────────── -->
-  <aside class="w-64 glass-header border-l border-slate-800 flex flex-col justify-between p-4 hidden md:flex z-30">
+  <aside class="w-64 glass-sidebar flex flex-col justify-between p-4 hidden md:flex z-30 shrink-0">
     <div>
       <!-- Brand Logo -->
-      <div class="flex items-center gap-3 px-3 py-4 mb-6 border-b border-slate-800">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg pulse-glow">
+      <div class="flex items-center gap-3 px-3 py-4 mb-5 border-b border-slate-700/50">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg pulse-glow">
           <i data-lucide="shield-check" class="w-6 h-6"></i>
         </div>
         <div>
-          <h1 class="font-bold text-base text-slate-100">سامانه صیاد پرو</h1>
-          <p class="text-xs text-slate-400">مدیریت مشتریان و اعتبارسنجی</p>
+          <h1 class="font-bold text-base tracking-tight">صیاد پرو وب</h1>
+          <p class="text-[11px] text-slate-400">بانک مرکزی و پاسارگاد</p>
         </div>
       </div>
 
       <!-- Navigation Links -->
       <nav class="space-y-1.5">
-        <button onclick="App.switchTab('dashboard')" data-tab="dashboard" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition bg-blue-600 text-white shadow-md">
+        <button onclick="App.switchTab('dashboard')" data-tab="dashboard" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition bg-blue-600 text-white shadow-md">
           <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
           <span>داشبورد و آمار کلی</span>
         </button>
 
-        <button onclick="App.switchTab('customers')" data-tab="customers" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800 hover:text-slate-100">
+        <button onclick="App.switchTab('customers')" data-tab="customers" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="users" class="w-5 h-5"></i>
           <span>فهرست مشتریان</span>
         </button>
 
-        <button onclick="App.switchTab('cheques')" data-tab="cheques" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800 hover:text-slate-100">
+        <button onclick="App.switchTab('cheques', 'all')" data-tab="cheques" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="file-text" class="w-5 h-5"></i>
           <span>تمام چک‌های صیادی</span>
         </button>
 
-        <button onclick="App.switchTab('pasargad')" data-tab="pasargad" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800 hover:text-slate-100">
+        <button onclick="App.switchTab('pasargad')" data-tab="pasargad" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="building-2" class="w-5 h-5"></i>
           <span>استعلام پاسارگاد</span>
-        </button>
-
-        <button onclick="App.switchTab('scheduler')" data-tab="scheduler" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800 hover:text-slate-100">
-          <i data-lucide="clock" class="w-5 h-5"></i>
-          <span>زمان‌بند خودکار روزانه</span>
         </button>
       </nav>
     </div>
 
-    <!-- Bottom Actions & Theme Switcher -->
-    <div class="space-y-3 pt-4 border-t border-slate-800">
-      <a href="/api/export/excel" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition">
-        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
-        <span>دریافت خروجی اکسل کامل</span>
-      </a>
+    <!-- Bottom Actions & Utilities -->
+    <div class="space-y-2 pt-4 border-t border-slate-700/50">
+      <!-- Bulk Inquiry Quick Trigger -->
+      <button onclick="App.openBulkInquiryModal()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-2xl text-xs font-bold shadow-lg transition">
+        <i data-lucide="zap" class="w-4 h-4 text-amber-300"></i>
+        <span>استعلام دسته‌جمعی سبد</span>
+      </button>
 
-      <button onclick="window.toggleTheme()" class="w-full flex items-center justify-between px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700/80 rounded-xl text-xs text-slate-300 transition">
+      <!-- Excel Export -->
+      <button onclick="App.exportToExcel()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-2xl text-xs font-bold transition">
+        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+        <span>خروجی اکسل کامل</span>
+      </button>
+
+      <!-- Log Terminal & Backup Grid -->
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="App.openLogsModal()" class="flex items-center justify-center gap-1.5 py-2 bg-slate-800/60 hover:bg-slate-700/80 rounded-2xl text-[11px] font-medium transition" title="مشاهده لاگ‌های سیستم">
+          <i data-lucide="terminal" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span>لاگ‌ها (<span id="sidebar-log-count">۰</span>)</span>
+        </button>
+
+        <button onclick="App.backupDataJSON()" class="flex items-center justify-center gap-1.5 py-2 bg-slate-800/60 hover:bg-slate-700/80 rounded-2xl text-[11px] font-medium transition" title="پشتیبان‌گیری از داده‌ها">
+          <i data-lucide="download" class="w-3.5 h-3.5 text-sky-400"></i>
+          <span>بک‌آپ</span>
+        </button>
+      </div>
+
+      <!-- Theme Switcher -->
+      <button onclick="window.toggleTheme()" class="w-full flex items-center justify-between px-4 py-2.5 bg-slate-800/60 hover:bg-slate-700/80 rounded-2xl text-xs transition">
         <span class="flex items-center gap-2">
           <i data-lucide="sun" class="w-4 h-4 theme-sun-icon text-amber-400"></i>
           <i data-lucide="moon" class="w-4 h-4 theme-moon-icon hidden text-indigo-300"></i>
-          <span>تغییر تم روز / شب</span>
+          <span>حالت روز / شب</span>
         </span>
-        <span class="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-300 font-mono">Shift+T</span>
       </button>
     </div>
   </aside>
@@ -85,27 +118,32 @@
        ───────────────────────────────────────────────────────────── -->
   <div class="flex-1 flex flex-col min-w-0">
     
-    <!-- Topbar -->
+    <!-- Topbar Header -->
     <header class="glass-header px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
       <!-- Search Input -->
       <div class="relative flex-1 max-w-md">
         <i data-lucide="search" class="w-4 h-4 absolute right-3.5 top-3.5 text-slate-400"></i>
-        <input id="global-search-input" type="text" placeholder="جستجوی نام مشتری، کدملی، شماره صیادی یا سریال..." class="w-full bg-slate-900/60 border border-slate-700/80 rounded-xl pr-10 pl-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition">
+        <input id="global-search-input" type="text" placeholder="جستجوی نام مشتری، کدملی، شماره صیادی یا سریال..." class="w-full rounded-2xl pr-10 pl-4 py-2.5 text-sm focus:outline-none transition">
       </div>
 
       <!-- Quick Action Buttons -->
       <div class="flex items-center gap-3">
-        <button onclick="App.openAddCustomerModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
+        <button onclick="App.openBulkInquiryModal()" class="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-2xl text-sm font-bold flex items-center gap-2 shadow-lg transition">
+          <i data-lucide="zap" class="w-4 h-4 text-amber-300 animate-pulse"></i>
+          <span class="hidden sm:inline">استعلام کلی سبد</span>
+        </button>
+
+        <button onclick="App.openAddCustomerModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
           <i data-lucide="user-plus" class="w-4 h-4"></i>
-          <span>مشتری جدید</span>
+          <span class="hidden sm:inline">مشتری جدید</span>
         </button>
 
-        <button onclick="App.openAddChequeModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
+        <button onclick="App.openAddChequeModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
           <i data-lucide="plus-circle" class="w-4 h-4"></i>
-          <span>ثبت چک</span>
+          <span class="hidden sm:inline">ثبت چک</span>
         </button>
 
-        <button onclick="window.toggleTheme()" class="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl md:hidden transition">
+        <button onclick="window.toggleTheme()" class="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl md:hidden transition">
           <i data-lucide="sun" class="w-4 h-4 theme-sun-icon text-amber-400"></i>
           <i data-lucide="moon" class="w-4 h-4 theme-moon-icon hidden text-indigo-300"></i>
         </button>
@@ -119,104 +157,155 @@
            TAB 1: Dashboard View
            ═════════════════════════════════════════════════════════════ -->
       <section id="view-dashboard" class="tab-view space-y-6">
-        <!-- Overview Stats Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          <!-- Total Customers -->
-          <div class="glass-card p-5 border border-blue-500/20 bg-blue-500/5 relative overflow-hidden">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-xs text-blue-400 font-semibold mb-1">تعداد کل مشتریان</p>
-                <h3 id="stat-total-customers" class="text-3xl font-black font-mono text-slate-100">۰</h3>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
-                <i data-lucide="users" class="w-6 h-6"></i>
-              </div>
+        
+        <!-- Header Banner with Bulk Inquiry & Auto-Scheduler Widget -->
+        <div class="glass-card p-5 border border-blue-500/20 bg-gradient-to-l from-blue-600/10 via-indigo-600/5 to-transparent flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+              <i data-lucide="activity" class="w-6 h-6"></i>
             </div>
-            <div class="text-xs text-slate-400 mt-3 flex items-center gap-1">
-              <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i>
-              <span>شناسایی‌شده با استعلام بانک مرکزی</span>
+            <div>
+              <h2 class="text-base font-bold">داشبورد مانیتورینگ جامع و اعتبارسنجی صیادی</h2>
+              <p class="text-xs text-slate-400 mt-0.5">برای مشاهده لیست اختصاصی هر بخش، روی کارت مربوطه کلیک کنید.</p>
             </div>
           </div>
 
-          <!-- Total Cheques -->
-          <div class="glass-card p-5 border border-indigo-500/20 bg-indigo-500/5 relative overflow-hidden">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-xs text-indigo-400 font-semibold mb-1">تعداد کل چک‌ها</p>
-                <h3 id="stat-total-cheques" class="text-3xl font-black font-mono text-slate-100">۰</h3>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                <i data-lucide="file-text" class="w-6 h-6"></i>
-              </div>
+          <!-- Auto-Scheduler Control Widget -->
+          <div class="flex items-center gap-4 bg-slate-900/40 p-2.5 rounded-2xl border border-slate-700/40 text-xs">
+            <div class="flex items-center gap-2">
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="scheduler-toggle-checkbox" class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+              <span class="font-semibold">استعلام زمان‌بندی‌شده:</span>
             </div>
-            <div class="text-xs text-slate-400 mt-3 flex items-center gap-1">
-              <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i>
-              <span>ثبت در سیستم و صندوق</span>
-            </div>
-          </div>
 
-          <!-- Total Amount -->
-          <div class="glass-card p-5 border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-xs text-emerald-400 font-semibold mb-1">مجموع ارزش ریالی چک‌ها</p>
-                <h3 id="stat-total-amount" class="text-2xl font-black font-mono text-slate-100">۰</h3>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                <i data-lucide="banknote" class="w-6 h-6"></i>
-              </div>
-            </div>
-            <div class="text-xs text-slate-400 mt-3">ارزش تجمیعی به ریال</div>
-          </div>
+            <select id="scheduler-interval-select" class="rounded-xl px-2.5 py-1 text-xs focus:outline-none">
+              <option value="1">هر ۱ ساعت</option>
+              <option value="3">هر ۳ ساعت</option>
+              <option value="6" selected>هر ۶ ساعت</option>
+              <option value="12">هر ۱۲ ساعت</option>
+              <option value="24">هر ۲۴ ساعت</option>
+            </select>
 
-          <!-- In Transit (Pasargad) -->
-          <div class="glass-card p-5 border border-sky-500/20 bg-sky-500/5 relative overflow-hidden">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-xs text-sky-400 font-semibold mb-1">مبلغ چک‌های در راه (پاسارگاد)</p>
-                <h3 id="stat-in-transit-amount" class="text-xl font-black font-mono text-sky-300">۰</h3>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
-                <i data-lucide="truck" class="w-6 h-6"></i>
-              </div>
+            <div class="font-mono text-slate-400 font-bold flex items-center gap-1">
+              <i data-lucide="timer" class="w-3.5 h-3.5 text-blue-400"></i>
+              <span id="scheduler-countdown-display">غیرفعال</span>
             </div>
-            <div class="text-xs text-slate-400 mt-3">استعلام مستقیم از سامانه پاسارگاد</div>
-          </div>
-
-          <!-- Cleared (Pasargad) -->
-          <div class="glass-card p-5 border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-xs text-emerald-400 font-semibold mb-1">مبلغ چک‌های رفع سوءاثر شده</p>
-                <h3 id="stat-cleared-amount" class="text-xl font-black font-mono text-emerald-300">۰</h3>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                <i data-lucide="check-check" class="w-6 h-6"></i>
-              </div>
-            </div>
-            <div class="text-xs text-slate-400 mt-3">چک‌های معتبر و رفع سوءاثر</div>
-          </div>
-
-          <!-- Bounced (Pasargad) -->
-          <div class="glass-card p-5 border border-rose-500/20 bg-rose-500/5 relative overflow-hidden">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-xs text-rose-400 font-semibold mb-1">مبلغ چک‌های برگشتی (پاسارگاد)</p>
-                <h3 id="stat-bounced-amount" class="text-xl font-black font-mono text-rose-300">۰</h3>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center">
-                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
-              </div>
-            </div>
-            <div class="text-xs text-slate-400 mt-3">ریسک‌های شناسایی‌شده</div>
           </div>
         </div>
 
-        <!-- Charts & Distribution -->
+        <!-- 6 Interactive Clickable Stat Cards (Drilldown Pages) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          
+          <!-- Card 1: Total Customers -->
+          <div onclick="App.drilldown('customers')" class="glass-card stat-card-clickable p-5 border border-blue-500/25 bg-blue-500/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-blue-400 font-bold mb-1">تعداد کل مشتریان</p>
+                <h3 id="stat-total-customers" class="text-3xl font-black font-mono">۰</h3>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition">
+                <i data-lucide="users" class="w-6 h-6"></i>
+              </div>
+            </div>
+            <div class="text-xs text-slate-400 mt-4 flex items-center justify-between pt-2 border-t border-slate-700/30">
+              <span class="flex items-center gap-1"><i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i> شناسایی بانک مرکزی</span>
+              <span class="text-blue-400 font-bold group-hover:translate-x-[-3px] transition flex items-center gap-0.5">مشاهده تفصیلی <i data-lucide="chevron-left" class="w-3 h-3"></i></span>
+            </div>
+          </div>
+
+          <!-- Card 2: Total Cheques -->
+          <div onclick="App.drilldown('cheques')" class="glass-card stat-card-clickable p-5 border border-indigo-500/25 bg-indigo-500/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-indigo-400 font-bold mb-1">تعداد کل چک‌ها</p>
+                <h3 id="stat-total-cheques" class="text-3xl font-black font-mono">۰</h3>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition">
+                <i data-lucide="file-text" class="w-6 h-6"></i>
+              </div>
+            </div>
+            <div class="text-xs text-slate-400 mt-4 flex items-center justify-between pt-2 border-t border-slate-700/30">
+              <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i> ثبت‌شده در سامانه</span>
+              <span class="text-indigo-400 font-bold group-hover:translate-x-[-3px] transition flex items-center gap-0.5">مشاهده تمام چک‌ها <i data-lucide="chevron-left" class="w-3 h-3"></i></span>
+            </div>
+          </div>
+
+          <!-- Card 3: Total Amount -->
+          <div onclick="App.drilldown('total-amount')" class="glass-card stat-card-clickable p-5 border border-emerald-500/25 bg-emerald-500/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-emerald-400 font-bold mb-1">مجموع ارزش ریالی چک‌ها</p>
+                <h3 id="stat-total-amount" class="text-2xl font-black font-mono">۰</h3>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition">
+                <i data-lucide="banknote" class="w-6 h-6"></i>
+              </div>
+            </div>
+            <div class="text-xs text-slate-400 mt-4 flex items-center justify-between pt-2 border-t border-slate-700/30">
+              <span>ارزش تجمیعی سبد</span>
+              <span class="text-emerald-400 font-bold group-hover:translate-x-[-3px] transition flex items-center gap-0.5">مرتب‌سازی مبالغ <i data-lucide="chevron-left" class="w-3 h-3"></i></span>
+            </div>
+          </div>
+
+          <!-- Card 4: In Transit (Pasargad) -->
+          <div onclick="App.drilldown('in-transit')" class="glass-card stat-card-clickable p-5 border border-sky-500/25 bg-sky-500/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-sky-400 font-bold mb-1">مبلغ چک‌های در راه (پاسارگاد)</p>
+                <h3 id="stat-in-transit-amount" class="text-xl font-black font-mono text-sky-400">۰</h3>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center group-hover:scale-110 transition">
+                <i data-lucide="truck" class="w-6 h-6"></i>
+              </div>
+            </div>
+            <div class="text-xs text-slate-400 mt-4 flex items-center justify-between pt-2 border-t border-slate-700/30">
+              <span>استعلام آنلاین پاسارگاد</span>
+              <span class="text-sky-400 font-bold group-hover:translate-x-[-3px] transition flex items-center gap-0.5">لیست چک‌های در راه <i data-lucide="chevron-left" class="w-3 h-3"></i></span>
+            </div>
+          </div>
+
+          <!-- Card 5: Cleared (Pasargad) -->
+          <div onclick="App.drilldown('cleared')" class="glass-card stat-card-clickable p-5 border border-emerald-500/25 bg-emerald-500/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-emerald-400 font-bold mb-1">مبلغ چک‌های رفع سوءاثر شده</p>
+                <h3 id="stat-cleared-amount" class="text-xl font-black font-mono text-emerald-400">۰</h3>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition">
+                <i data-lucide="check-check" class="w-6 h-6"></i>
+              </div>
+            </div>
+            <div class="text-xs text-slate-400 mt-4 flex items-center justify-between pt-2 border-t border-slate-700/30">
+              <span>رفع سوءاثر شده‌های بانکی</span>
+              <span class="text-emerald-400 font-bold group-hover:translate-x-[-3px] transition flex items-center gap-0.5">لیست رفع سوءاثر <i data-lucide="chevron-left" class="w-3 h-3"></i></span>
+            </div>
+          </div>
+
+          <!-- Card 6: Bounced (Pasargad) -->
+          <div onclick="App.drilldown('bounced')" class="glass-card stat-card-clickable p-5 border border-rose-500/30 bg-rose-500/10 relative overflow-hidden group">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-rose-400 font-bold mb-1">مبلغ چک‌های برگشتی (پاسارگاد)</p>
+                <h3 id="stat-bounced-amount" class="text-xl font-black font-mono text-rose-400">۰</h3>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center group-hover:scale-110 transition">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+              </div>
+            </div>
+            <div class="text-xs text-slate-400 mt-4 flex items-center justify-between pt-2 border-t border-slate-700/30">
+              <span class="text-rose-400 font-bold">ریسک بالا</span>
+              <span class="text-rose-400 font-bold group-hover:translate-x-[-3px] transition flex items-center gap-0.5">لیست چک‌های برگشتی <i data-lucide="chevron-left" class="w-3 h-3"></i></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts & Holders Section -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <!-- Credit Colors Doughnut Chart -->
-          <div class="glass-card p-6 border border-slate-800 flex flex-col justify-between">
-            <h3 class="text-base font-bold text-slate-200 mb-4 flex items-center gap-2">
+          <div class="glass-card p-6 border border-slate-700/60 flex flex-col justify-between">
+            <h3 class="text-base font-bold mb-4 flex items-center gap-2">
               <i data-lucide="pie-chart" class="w-5 h-5 text-blue-400"></i>
               توزیع وضعیت اعتباری مشتریان
             </h3>
@@ -224,62 +313,26 @@
               <canvas id="chart-credit-colors"></canvas>
             </div>
             <div class="text-xs text-slate-400 text-center mt-4">
-              بر اساس استعلام رسمی رنگی از پایگاه داده بانک مرکزی
+              بر اساس استعلام رسمی رنگی پایگاه داده بانک مرکزی
             </div>
           </div>
 
-          <!-- 9 Preset Holders Card -->
-          <div class="glass-card p-6 border border-slate-800 lg:col-span-2">
-            <h3 class="text-base font-bold text-slate-200 mb-4 flex items-center gap-2">
-              <i data-lucide="id-card" class="w-5 h-5 text-indigo-400"></i>
-              فهرست دارندگان چک پیش‌فرض (۹ هولدر رسمی صندوق)
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۱. علی رمضانزاده</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۰۹۲۱۹۷۴۰۶۱</div>
-                <div class="text-[11px] text-slate-500">خودم (دارنده اصلی)</div>
-              </div>
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۲. عادل رمضانزاده</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۰۹۲۳۸۱۲۰۳۲</div>
-                <div class="text-[11px] text-slate-500">داداش علی رمضانزاده</div>
-              </div>
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۳. محمد ضیافتی</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۰۹۲۲۲۳۶۹۹۲</div>
-                <div class="text-[11px] text-slate-500">شریک</div>
-              </div>
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۴. علیرضا ضیافتی</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۶۴۳۰۰۲۸۵۹۳</div>
-                <div class="text-[11px] text-slate-500">داداش محمد ضیافتی</div>
-              </div>
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۵. مهدی زمانزاده</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۰۹۴۱۵۰۳۷۷۱</div>
-                <div class="text-[11px] text-slate-500">دایی مهدی</div>
-              </div>
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۶. احسان ارم</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۰۹۴۵۸۰۰۷۱۱</div>
-                <div class="text-[11px] text-slate-500">رفیق علی رمضانزاده</div>
-              </div>
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۷. حمیدرضا حصاری</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۱۰۶۴۱۲۸۰۳۳</div>
-                <div class="text-[11px] text-slate-500">فروشنده تیگو ۷</div>
-              </div>
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۸. محمدرضا ذکاییان</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۰۹۲۳۷۰۶۳۴۸</div>
-                <div class="text-[11px] text-slate-500">رفیق عادل</div>
-              </div>
-              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                <div class="font-bold text-blue-400">۹. فاطمه زمانزاده</div>
-                <div class="font-mono text-xs text-slate-400 mt-0.5">۰۹۳۴۴۹۱۱۸۶</div>
-                <div class="text-[11px] text-slate-500">مادر</div>
-              </div>
+          <!-- Holders Management Card -->
+          <div class="glass-card p-6 border border-slate-700/60 lg:col-span-2 space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base font-bold flex items-center gap-2">
+                <i data-lucide="id-card" class="w-5 h-5 text-indigo-400"></i>
+                مدیریت دارندگان چک پیش‌فرض (هولدرهای رسمی صندوق)
+              </h3>
+              <button onclick="App.openAddHolderModal()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                افزودن دارنده جدید
+              </button>
+            </div>
+
+            <!-- Dynamic Holders Grid -->
+            <div id="dashboard-holders-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              <!-- Dynamically rendered -->
             </div>
           </div>
         </div>
@@ -292,7 +345,7 @@
         <!-- Controls & Filters -->
         <div class="glass-card p-4 flex flex-wrap items-center justify-between gap-4">
           <div class="flex items-center gap-3">
-            <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <h2 class="text-lg font-bold flex items-center gap-2">
               <i data-lucide="users" class="w-5 h-5 text-blue-400"></i>
               فهرست مشتریان
             </h2>
@@ -300,8 +353,8 @@
 
           <!-- Color Filter -->
           <div class="flex items-center gap-3">
-            <label class="text-xs text-slate-400">فیلتر وضعیت اعتباری:</label>
-            <select id="credit-color-filter" class="bg-slate-900/80 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+            <label class="text-xs text-slate-400 font-semibold">فیلتر وضعیت اعتباری:</label>
+            <select id="credit-color-filter" class="rounded-xl px-3 py-1.5 text-xs focus:outline-none">
               <option value="all">همه وضعیت‌ها</option>
               <option value="سفید">سفید (خوش‌حساب)</option>
               <option value="زرد">زرد (کم‌ریسک)</option>
@@ -317,11 +370,11 @@
           </div>
         </div>
 
-        <!-- Table -->
+        <!-- Customers Table -->
         <div class="glass-card overflow-hidden">
           <div class="overflow-x-auto">
             <table class="w-full text-right text-sm">
-              <thead class="bg-slate-900/80 text-slate-400 text-xs border-b border-slate-700/60">
+              <thead class="bg-slate-900/60 text-slate-400 text-xs border-b border-slate-700/60">
                 <tr>
                   <th class="py-3.5 px-4 w-12">#</th>
                   <th class="py-3.5 px-4">نام کامل مشتری</th>
@@ -332,7 +385,7 @@
                   <th class="py-3.5 px-4 text-center">عملیات</th>
                 </tr>
               </thead>
-              <tbody id="customers-table-body" class="divide-y divide-slate-800/40">
+              <tbody id="customers-table-body" class="divide-y divide-slate-700/30">
                 <!-- Dynamically loaded -->
               </tbody>
             </table>
@@ -344,22 +397,34 @@
            TAB 3: Cheques Directory
            ═════════════════════════════════════════════════════════════ -->
       <section id="view-cheques" class="tab-view hidden space-y-4">
+        
+        <!-- Filter Drilldown Banner -->
+        <div id="cheques-filter-banner" class="hidden"></div>
+
         <div class="glass-card p-4 flex flex-wrap items-center justify-between gap-4">
-          <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+          <h2 class="text-lg font-bold flex items-center gap-2">
             <i data-lucide="file-text" class="w-5 h-5 text-indigo-400"></i>
-            فهرست تمام چک‌های صیادی
+            فهرست چک‌های صیادی
           </h2>
 
-          <button onclick="App.openAddChequeModal()" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
-            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-            ثبت چک صیادی جدید
-          </button>
+          <div class="flex items-center gap-3">
+            <button onclick="App.openBulkInquiryModal()" class="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition">
+              <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-300"></i>
+              استعلام گروهی چک‌ها
+            </button>
+
+            <button onclick="App.openAddChequeModal()" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              ثبت چک جدید
+            </button>
+          </div>
         </div>
 
+        <!-- Cheques Table -->
         <div class="glass-card overflow-hidden">
           <div class="overflow-x-auto">
             <table class="w-full text-right text-sm">
-              <thead class="bg-slate-900/80 text-slate-400 text-xs border-b border-slate-700/60">
+              <thead class="bg-slate-900/60 text-slate-400 text-xs border-b border-slate-700/60">
                 <tr>
                   <th class="py-3.5 px-3 w-12">#</th>
                   <th class="py-3.5 px-3">شناسه ۱۶ رقمی صیادی</th>
@@ -367,11 +432,11 @@
                   <th class="py-3.5 px-3">شماره سریال</th>
                   <th class="py-3.5 px-3">مبلغ (ریال)</th>
                   <th class="py-3.5 px-3">تاریخ سررسید</th>
-                  <th class="py-3.5 px-3">بانک صادرکننده</th>
+                  <th class="py-3.5 px-3">بانک و هولدر</th>
                   <th class="py-3.5 px-3 text-center">عملیات و استعلام</th>
                 </tr>
               </thead>
-              <tbody id="cheques-table-body" class="divide-y divide-slate-800/40">
+              <tbody id="cheques-table-body" class="divide-y divide-slate-700/30">
                 <!-- Dynamically loaded -->
               </tbody>
             </table>
@@ -383,45 +448,42 @@
            TAB 4: Pasargad Dedicated Inquiry View
            ═════════════════════════════════════════════════════════════ -->
       <section id="view-pasargad" class="tab-view hidden space-y-6">
-        <div class="glass-card p-6 border border-sky-500/20 bg-gradient-to-br from-sky-950/30 to-slate-900/60">
+        <div class="glass-card p-6 border border-sky-500/30 bg-gradient-to-br from-sky-950/20 to-slate-900/60">
           <div class="flex items-center gap-3 mb-4">
             <div class="w-12 h-12 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
               <i data-lucide="shield-alert" class="w-6 h-6"></i>
             </div>
             <div>
-              <h2 class="text-xl font-bold text-slate-100">سامانه استعلام وضعیت و چک‌های برگشتی بانک پاسارگاد</h2>
-              <p class="text-xs text-slate-400">استعلام برخط شاخص‌های چک‌های در راه، رفع سوءاثر شده و برگشتی</p>
+              <h2 class="text-xl font-bold">سامانه استعلام آنلاین چک‌های برگشتی بانک پاسارگاد</h2>
+              <p class="text-xs text-slate-400">استعلام برخط مبالغ در راه، رفع سوءاثر شده و برگشتی از درگاه پاسارگاد</p>
             </div>
           </div>
 
           <!-- Inquiry Form -->
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-            <!-- ID Type (Pre-selected Real Customer) -->
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1.5">نوع کد شناسایی:</label>
-              <select class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500" disabled>
+              <select class="w-full rounded-2xl px-4 py-2.5 text-sm focus:outline-none" disabled>
                 <option value="1">مشتری حقیقی (کد ملی)</option>
               </select>
             </div>
 
-            <!-- Predefined 9 Holders -->
             <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1.5">کد شناسایی دارنده چک (۹ هولدر رسمی):</label>
-              <select id="pasargad-holder-select" class="holder-select-dropdown w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+              <label class="block text-xs font-semibold text-slate-300 mb-1.5">کد شناسایی دارنده چک (هولدر):</label>
+              <select id="pasargad-holder-select" class="holder-select-dropdown w-full rounded-2xl px-4 py-2.5 text-sm focus:outline-none">
                 <!-- Populated dynamically -->
               </select>
             </div>
 
-            <!-- Sayadi ID -->
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1.5">کد شناسه ۱۶ رقمی صیادی:</label>
-              <input id="pasargad-sayadi-input" type="text" maxlength="16" placeholder="مثلاً: 5080030099110169" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 font-mono focus:outline-none focus:border-sky-500">
+              <input id="pasargad-sayadi-input" type="text" maxlength="16" placeholder="مثلاً: 5080030099110169" class="w-full rounded-2xl px-4 py-2.5 text-sm font-mono focus:outline-none">
               <input id="pasargad-customer-id-hidden" type="hidden">
             </div>
           </div>
 
           <div class="mt-5 flex justify-end">
-            <button id="btn-submit-pasargad" onclick="App.submitPasargadInquiry()" class="px-6 py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-sm shadow-xl flex items-center gap-2 transition">
+            <button id="btn-submit-pasargad" onclick="App.submitPasargadInquiry()" class="px-6 py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-2xl text-sm shadow-xl flex items-center gap-2 transition">
               <i data-lucide="shield-check" class="w-5 h-5"></i>
               <span>دریافت استعلام آنی از بانک پاسارگاد</span>
             </button>
@@ -436,77 +498,25 @@
           </h3>
 
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800">
+            <div class="p-4 bg-slate-900/50 rounded-2xl border border-slate-700/40">
               <div class="text-xs text-slate-400 mb-1">دارنده استعلام‌کننده:</div>
-              <div id="res-holder-name" class="font-bold text-slate-100">---</div>
+              <div id="res-holder-name" class="font-bold">---</div>
             </div>
 
-            <div class="p-4 bg-slate-900/60 rounded-xl border border-sky-500/30">
+            <div class="p-4 bg-slate-900/50 rounded-2xl border border-sky-500/30">
               <div class="text-xs text-sky-400 mb-1 font-semibold">چک‌های در راه:</div>
-              <div id="res-in-transit" class="font-bold font-mono text-sky-300 text-lg">۰ ریال</div>
+              <div id="res-in-transit" class="font-bold font-mono text-sky-400 text-lg">۰ ریال</div>
             </div>
 
-            <div class="p-4 bg-slate-900/60 rounded-xl border border-emerald-500/30">
+            <div class="p-4 bg-slate-900/50 rounded-2xl border border-emerald-500/30">
               <div class="text-xs text-emerald-400 mb-1 font-semibold">چک‌های رفع سوءاثر شده:</div>
-              <div id="res-cleared" class="font-bold font-mono text-emerald-300 text-lg">۰ ریال</div>
+              <div id="res-cleared" class="font-bold font-mono text-emerald-400 text-lg">۰ ریال</div>
             </div>
 
-            <div class="p-4 bg-slate-900/60 rounded-xl border border-rose-500/30">
+            <div class="p-4 bg-slate-900/50 rounded-2xl border border-rose-500/30">
               <div class="text-xs text-rose-400 mb-1 font-semibold">چک‌های برگشتی:</div>
-              <div id="res-bounced" class="font-bold font-mono text-rose-300 text-lg">۰ ریال</div>
+              <div id="res-bounced" class="font-bold font-mono text-rose-400 text-lg">۰ ریال</div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ═════════════════════════════════════════════════════════════
-           TAB 5: Daily Automation & Scheduler View
-           ═════════════════════════════════════════════════════════════ -->
-      <section id="view-scheduler" class="tab-view hidden space-y-6">
-        <div class="glass-card p-6 border border-indigo-500/20 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <i data-lucide="clock" class="w-6 h-6 text-indigo-400"></i>
-              زمان‌بندی خودکار استعلام روزانه
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">
-              سیستم به صورت خودکار هر روز وضعیت تمام چک‌های فعال را از سامانه پاسارگاد بروزرسانی و در پایگاه داده ثبت می‌کند.
-            </p>
-          </div>
-
-          <div class="flex items-center gap-4">
-            <div class="text-right">
-              <div class="text-xs text-slate-400">وضعیت سرویس:</div>
-              <span id="sched-status-badge" class="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 rounded-lg text-xs font-bold font-mono">
-                فعال و آماده
-              </span>
-            </div>
-
-            <button onclick="App.triggerSchedulerNow()" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg transition">
-              <i data-lucide="play" class="w-4 h-4"></i>
-              اجرای فوری استعلام همگانی
-            </button>
-          </div>
-        </div>
-
-        <div class="glass-card overflow-hidden">
-          <div class="p-4 bg-slate-900/60 border-b border-slate-800 font-bold text-sm text-slate-200">
-            تاریخچه اجراهای اخیر زمان‌بند
-          </div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-right text-sm">
-              <thead class="bg-slate-900 text-slate-400 text-xs">
-                <tr>
-                  <th class="py-3 px-4">زمان اجرا</th>
-                  <th class="py-3 px-4">عنوان فرآیند</th>
-                  <th class="py-3 px-4">وضعیت</th>
-                  <th class="py-3 px-4">جزئیات و خروجی</th>
-                </tr>
-              </thead>
-              <tbody id="scheduler-logs-body" class="divide-y divide-slate-800/40">
-                <!-- Dynamically populated -->
-              </tbody>
-            </table>
           </div>
         </div>
       </section>
@@ -515,10 +525,177 @@
   </div>
 
   <!-- ─────────────────────────────────────────────────────────────
-       🪟 Dedicated Customer Profile Modal
+       ⚡ Modal: Bulk Portfolio Inquiry
+       ───────────────────────────────────────────────────────────── -->
+  <div id="bulk-inquiry-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="glass-card w-full max-w-2xl rounded-3xl p-6 shadow-2xl animate-fade-in space-y-5">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
+            <i data-lucide="zap" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-lg">استعلام گروهی تمام سبد چک‌ها</h3>
+            <p class="text-xs text-slate-400">اجرای موازی و خودکار استعلام بر روی <span id="bulk-total-count" class="font-bold text-blue-400">۰</span> فقره چک</p>
+          </div>
+        </div>
+        <button onclick="App.closeBulkInquiryModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <!-- Config Row -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1.5">هولدر پیش‌فرض جهت استعلام:</label>
+          <select id="bulk-holder-select" class="holder-select-dropdown w-full rounded-2xl px-3.5 py-2 text-xs focus:outline-none">
+            <!-- Dynamically populated -->
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold mb-1.5">تعداد فرآیندهای موازی (Concurrency):</label>
+          <select id="bulk-concurrency-select" class="w-full rounded-2xl px-3.5 py-2 text-xs focus:outline-none">
+            <option value="2">۲ فرآیند موازی (امن و آرام)</option>
+            <option value="3" selected>۳ فرآیند موازی (پیشنهادی و پرسرعت)</option>
+            <option value="5">۵ فرآیند موازی (حداکثر سرعت)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Progress Section -->
+      <div class="p-4 bg-slate-900/60 rounded-2xl border border-slate-700/50 space-y-3">
+        <div class="flex items-center justify-between text-xs">
+          <span id="bulk-progress-text" class="font-semibold text-slate-300">آماده شروع استعلام...</span>
+          <span id="bulk-progress-percent" class="font-mono font-bold text-sky-400">۰٪</span>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="w-full h-3.5 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700">
+          <div id="bulk-progress-bar" class="h-full bg-gradient-to-r from-blue-600 to-sky-400 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+
+        <!-- Stats Counter -->
+        <div class="grid grid-cols-4 gap-2 text-center pt-2 text-xs font-mono">
+          <div class="p-2 bg-slate-800/80 rounded-xl">
+            <div class="text-[10px] text-slate-400">موفق</div>
+            <div id="bulk-stat-success" class="font-bold text-emerald-400 text-sm">۰</div>
+          </div>
+          <div class="p-2 bg-slate-800/80 rounded-xl">
+            <div class="text-[10px] text-slate-400">ناموفق</div>
+            <div id="bulk-stat-error" class="font-bold text-rose-400 text-sm">۰</div>
+          </div>
+          <div class="p-2 bg-slate-800/80 rounded-xl">
+            <div class="text-[10px] text-slate-400">در راه (ریال)</div>
+            <div id="bulk-stat-in-transit" class="font-bold text-sky-400 text-xs truncate">۰</div>
+          </div>
+          <div class="p-2 bg-slate-800/80 rounded-xl">
+            <div class="text-[10px] text-slate-400">برگشتی (ریال)</div>
+            <div id="bulk-stat-bounced" class="font-bold text-rose-400 text-xs truncate">۰</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex justify-end gap-3 pt-2">
+        <button onclick="App.closeBulkInquiryModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-semibold transition">بستن</button>
+        <button id="btn-pause-bulk" onclick="App.pauseBulkInquiry()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl text-xs font-bold transition hidden">توقف موقت</button>
+        <button id="btn-resume-bulk" onclick="App.resumeBulkInquiry()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-bold transition hidden">ادامه عملیات</button>
+        <button id="btn-start-bulk" onclick="App.startBulkInquiry()" class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-2xl text-xs font-bold shadow-lg transition">شروع استعلام گروهی</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       📜 Modal: Professional System Logging Console
+       ───────────────────────────────────────────────────────────── -->
+  <div id="logs-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="glass-card w-full max-w-4xl max-h-[85vh] flex flex-col rounded-3xl p-6 shadow-2xl animate-fade-in space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            <i data-lucide="terminal" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-lg">کنسول وقایع و لاگ‌های سیستم</h3>
+            <p class="text-xs text-slate-400">ردیابی آنی رویدادهای استعلام، خطایابی پروکسی‌ها و عملیات دیتابیس</p>
+          </div>
+        </div>
+        <button onclick="App.closeLogsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <!-- Filter and Actions Toolbar -->
+      <div class="flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div class="flex items-center gap-1.5">
+          <button onclick="App.setLogFilter('ALL')" data-level="ALL" class="log-filter-btn px-3 py-1.5 bg-blue-600 text-white rounded-xl font-semibold">همه</button>
+          <button onclick="App.setLogFilter('INFO')" data-level="INFO" class="log-filter-btn px-3 py-1.5 bg-slate-800 text-slate-400 hover:text-white rounded-xl">INFO</button>
+          <button onclick="App.setLogFilter('SUCCESS')" data-level="SUCCESS" class="log-filter-btn px-3 py-1.5 bg-slate-800 text-slate-400 hover:text-white rounded-xl">SUCCESS</button>
+          <button onclick="App.setLogFilter('WARN')" data-level="WARN" class="log-filter-btn px-3 py-1.5 bg-slate-800 text-slate-400 hover:text-white rounded-xl">WARN</button>
+          <button onclick="App.setLogFilter('ERROR')" data-level="ERROR" class="log-filter-btn px-3 py-1.5 bg-slate-800 text-slate-400 hover:text-white rounded-xl">ERROR</button>
+          <button onclick="App.setLogFilter('BATCH')" data-level="BATCH" class="log-filter-btn px-3 py-1.5 bg-slate-800 text-slate-400 hover:text-white rounded-xl">BATCH</button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="App.exportLogs('txt')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl flex items-center gap-1 transition">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> دانلود لاگ (TXT)
+          </button>
+          <button onclick="App.exportLogs('json')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl flex items-center gap-1 transition">
+            <i data-lucide="file-code" class="w-3.5 h-3.5"></i> خروجی JSON
+          </button>
+          <button onclick="App.clearAllLogs()" class="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-xl flex items-center gap-1 transition">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> پاکسازی
+          </button>
+        </div>
+      </div>
+
+      <!-- Log Terminal Container -->
+      <div class="flex-1 overflow-hidden rounded-2xl border border-slate-700/60 log-terminal">
+        <div id="log-terminal-content" class="h-80 overflow-y-auto p-2 space-y-1">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       👥 Modal: Holders Add / Edit
+       ───────────────────────────────────────────────────────────── -->
+  <div id="holder-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="glass-card w-full max-w-md rounded-3xl p-6 shadow-2xl animate-fade-in space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+        <h3 id="holder-modal-title" class="font-bold text-base">افزودن دارنده چک</h3>
+        <button onclick="App.closeHolderModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <input id="holder-form-id" type="hidden">
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold mb-1">نام کامل دارنده چک *:</label>
+          <input id="holder-form-name" type="text" placeholder="مثلاً: علی رمضان‌زاده" class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold mb-1">کد ملی ۱۰ رقمی *:</label>
+          <input id="holder-form-national-id" type="text" maxlength="10" placeholder="مثلاً: 0921974061" class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold mb-1">نسبت / عنوان:</label>
+          <input id="holder-form-relationship" type="text" placeholder="مثلاً: دارنده اصلی (خودم)" class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 pt-3 border-t border-slate-700/60">
+        <button onclick="App.closeHolderModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-semibold transition">انصراف</button>
+        <button onclick="App.saveHolderForm()" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-xs font-bold shadow-lg transition">ذخیره دارنده</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       🪟 Customer Profile Modal
        ───────────────────────────────────────────────────────────── -->
   <div id="customer-profile-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
-    <div class="glass-card bg-slate-900 border border-slate-700 w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl animate-fade-in">
+    <div class="glass-card w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl animate-fade-in">
       <div id="customer-profile-content">
         <!-- Injected dynamically by app.js -->
       </div>
@@ -529,9 +706,9 @@
        ✏️ Customer Add / Edit Modal
        ───────────────────────────────────────────────────────────── -->
   <div id="customer-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
-    <div class="glass-card bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 shadow-2xl animate-fade-in space-y-4">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-        <h3 id="customer-modal-title" class="font-bold text-lg text-slate-100">ثبت مشتری جدید</h3>
+    <div class="glass-card w-full max-w-lg rounded-3xl p-6 shadow-2xl animate-fade-in space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+        <h3 id="customer-modal-title" class="font-bold text-lg">ثبت مشتری جدید</h3>
         <button onclick="App.closeCustomerModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
 
@@ -539,35 +716,35 @@
 
       <div class="space-y-3">
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">نام کامل مشتری *:</label>
-          <input id="customer-form-name" type="text" placeholder="نام و نام خانوادگی" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold mb-1">نام کامل مشتری *:</label>
+          <input id="customer-form-name" type="text" placeholder="نام و نام خانوادگی" class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">کد ملی:</label>
-            <input id="customer-form-national-id" type="text" placeholder="۱۰ رقم" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-500">
+            <label class="block text-xs font-semibold mb-1">کد ملی:</label>
+            <input id="customer-form-national-id" type="text" placeholder="۱۰ رقم" class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
           </div>
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">شماره تماس:</label>
-            <input id="customer-form-phone" type="text" placeholder="۰۹..." class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-500">
+            <label class="block text-xs font-semibold mb-1">شماره تماس:</label>
+            <input id="customer-form-phone" type="text" placeholder="۰۹..." class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
           </div>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">آدرس:</label>
-          <input id="customer-form-address" type="text" placeholder="آدرس یا محل سکونت" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold mb-1">آدرس:</label>
+          <input id="customer-form-address" type="text" placeholder="آدرس یا محل سکونت" class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">یادداشت / توضیحات:</label>
-          <textarea id="customer-form-notes" rows="2" placeholder="توضیحات تکمیلی مشتری..." class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"></textarea>
+          <label class="block text-xs font-semibold mb-1">یادداشت / توضیحات:</label>
+          <textarea id="customer-form-notes" rows="2" placeholder="توضیحات تکمیلی مشتری..." class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none"></textarea>
         </div>
       </div>
 
-      <div class="flex justify-end gap-3 pt-3 border-t border-slate-800">
-        <button onclick="App.closeCustomerModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">انصراف</button>
-        <button onclick="App.saveCustomerForm()" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg transition">ذخیره اطلاعات</button>
+      <div class="flex justify-end gap-3 pt-3 border-t border-slate-700/60">
+        <button onclick="App.closeCustomerModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-sm font-semibold transition">انصراف</button>
+        <button onclick="App.saveCustomerForm()" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-bold shadow-lg transition">ذخیره اطلاعات</button>
       </div>
     </div>
   </div>
@@ -576,9 +753,9 @@
        ✏️ Cheque Add / Edit Modal
        ───────────────────────────────────────────────────────────── -->
   <div id="cheque-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
-    <div class="glass-card bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 shadow-2xl animate-fade-in space-y-4">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-        <h3 id="cheque-modal-title" class="font-bold text-lg text-slate-100">ثبت چک جدید</h3>
+    <div class="glass-card w-full max-w-lg rounded-3xl p-6 shadow-2xl animate-fade-in space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+        <h3 id="cheque-modal-title" class="font-bold text-lg">ثبت چک جدید</h3>
         <button onclick="App.closeChequeModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
 
@@ -586,84 +763,60 @@
 
       <div class="space-y-3">
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">صاحب چک (مشتری) *:</label>
-          <select id="cheque-form-customer-select" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold mb-1">صاحب چک (مشتری) *:</label>
+          <select id="cheque-form-customer-select" class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
             <!-- Dynamically loaded -->
           </select>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">شناسه ۱۶ رقمی صیادی *:</label>
-          <input id="cheque-form-sayadi" type="text" maxlength="16" placeholder="۱۶ رقم صیادی" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold mb-1">شناسه ۱۶ رقمی صیادی *:</label>
+          <input id="cheque-form-sayadi" type="text" maxlength="16" placeholder="۱۶ رقم صیادی" class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">شماره سریال چک:</label>
-            <input id="cheque-form-number" type="text" placeholder="مثلاً: 057751" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-500">
+            <label class="block text-xs font-semibold mb-1">شماره سریال چک:</label>
+            <input id="cheque-form-number" type="text" placeholder="مثلاً: 057751" class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
           </div>
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">مبلغ (ریال):</label>
-            <input id="cheque-form-amount" type="number" placeholder="ریال" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-500">
+            <label class="block text-xs font-semibold mb-1">مبلغ (ریال):</label>
+            <input id="cheque-form-amount" type="number" placeholder="ریال" class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">تاریخ سررسید:</label>
-            <input id="cheque-form-date" type="text" placeholder="۱۴۰۴۰۵۲۹" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-500">
+            <label class="block text-xs font-semibold mb-1">تاریخ سررسید:</label>
+            <input id="cheque-form-date" type="text" placeholder="۱۴۰۴۰۵۲۹" class="w-full rounded-2xl px-3.5 py-2 text-sm font-mono focus:outline-none">
           </div>
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">بانک صادرکننده:</label>
-            <input id="cheque-form-bank" type="text" placeholder="نام بانک و شعبه" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500">
+            <label class="block text-xs font-semibold mb-1">بانک صادرکننده:</label>
+            <input id="cheque-form-bank" type="text" placeholder="نام بانک و شعبه" class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
           </div>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">دارنده چک (هولدر):</label>
-          <select id="cheque-form-holder-select" class="holder-select-dropdown w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold mb-1">دارنده چک (هولدر):</label>
+          <select id="cheque-form-holder-select" class="holder-select-dropdown w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
             <!-- Dynamically loaded -->
           </select>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">یادداشت:</label>
-          <input id="cheque-form-notes" type="text" placeholder="توضیحات..." class="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold mb-1">یادداشت:</label>
+          <input id="cheque-form-notes" type="text" placeholder="توضیحات..." class="w-full rounded-2xl px-3.5 py-2 text-sm focus:outline-none">
         </div>
       </div>
 
-      <div class="flex justify-end gap-3 pt-3 border-t border-slate-800">
-        <button onclick="App.closeChequeModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">انصراف</button>
-        <button onclick="App.saveChequeForm()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg transition">ذخیره چک</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─────────────────────────────────────────────────────────────
-       🏦 Quick Pasargad Modal
-       ───────────────────────────────────────────────────────────── -->
-  <div id="pasargad-inquiry-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
-    <div class="glass-card bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 shadow-2xl animate-fade-in space-y-4">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-        <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
-          <i data-lucide="shield-check" class="w-5 h-5 text-sky-400"></i>
-          استعلام اعتباری پاسارگاد
-        </h3>
-        <button onclick="App.closePasargadModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-      </div>
-
-      <p class="text-xs text-slate-400">
-        استعلام وضعیت چک‌های در راه، رفع سوءاثر شده و برگشتی از درگاه رسمی بانک پاسارگاد.
-      </p>
-
-      <div class="flex justify-end gap-3 pt-3 border-t border-slate-800">
-        <button onclick="App.closePasargadModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">بستن</button>
-        <button onclick="App.submitPasargadInquiry()" class="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-bold shadow-lg transition">شروع استعلام</button>
+      <div class="flex justify-end gap-3 pt-3 border-t border-slate-700/60">
+        <button onclick="App.closeChequeModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-sm font-semibold transition">انصراف</button>
+        <button onclick="App.saveChequeForm()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-sm font-bold shadow-lg transition">ذخیره چک</button>
       </div>
     </div>
   </div>
 
   <!-- App Script -->
-  <script src="/static/js/app.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
