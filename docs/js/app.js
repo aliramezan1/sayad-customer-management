@@ -469,7 +469,8 @@ const App = {
     container.innerHTML = list.map((ch, idx) => {
       const cust = this.state.customers.find(c => c.id === ch.customer_id);
       const inq = this.state.inquiries.find(i => i.sayadi_id === ch.sayadi_id);
-      const holder = this.state.holders.find(h => h.id === ch.holder_id);
+      const defaultHolder = this.state.holders[0] || { full_name: 'علی رمضانزاده', id: 1, national_id: '0921974061' };
+      const holder = this.state.holders.find(h => h.id === ch.holder_id) || defaultHolder;
 
       return `
         <tr class="border-b border-slate-700/30 hover:bg-slate-500/10 transition">
@@ -485,13 +486,13 @@ const App = {
           <td class="py-4 px-3 font-mono text-sm text-slate-300">${ch.cheque_date || '---'}</td>
           <td class="py-4 px-3 text-xs text-slate-300">
             <div>${ch.bank_name || '---'}</div>
-            <div class="text-[10px] text-slate-400 mt-0.5">هولدر: ${holder ? holder.full_name : 'انتخاب نشده'}</div>
+            <div class="text-[10px] text-slate-400 mt-0.5">هولدر: <strong class="text-slate-200">${holder.full_name}</strong></div>
           </td>
           <td class="py-4 px-3 text-center">
             <div class="flex items-center justify-center gap-2">
-              <button onclick="App.openPasargadModalForCheque('${ch.sayadi_id}', ${ch.customer_id || 'null'})" class="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs rounded-lg flex items-center gap-1 shadow-sm transition">
-                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
-                استعلام
+              <button onclick="App.inlineInquiryCheque('${ch.sayadi_id}', ${ch.customer_id || 'null'}, this)" class="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs rounded-lg flex items-center gap-1 shadow-sm transition" title="استعلام زنده بدون تغییر صفحه">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span>استعلام</span>
               </button>
               <button onclick="App.openEditChequeModal(${ch.id})" class="p-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white rounded-lg transition" title="ویرایش">
                 <i data-lucide="edit" class="w-3.5 h-3.5"></i>
@@ -604,7 +605,8 @@ const App = {
             </thead>
             <tbody class="divide-y divide-slate-800/60">
               ${cheques.map(ch => {
-                const holder = this.state.holders.find(h => h.id === ch.holder_id);
+                const defaultHolder = this.state.holders[0] || { full_name: 'علی رمضانزاده', id: 1, national_id: '0921974061' };
+                const holder = this.state.holders.find(h => h.id === ch.holder_id) || defaultHolder;
                 const inq = this.state.inquiries.find(i => i.sayadi_id === ch.sayadi_id);
                 const hasBounced = inq && inq.bounced_amount > 0;
 
@@ -615,7 +617,7 @@ const App = {
                     <td class="py-3 px-4 font-mono font-bold text-emerald-400">${this.formatMoney(ch.amount)}</td>
                     <td class="py-3 px-4 font-mono text-slate-300">${ch.cheque_date || '---'}</td>
                     <td class="py-3 px-4 text-slate-300">${ch.bank_name || '---'}</td>
-                    <td class="py-3 px-4 text-xs font-semibold text-slate-200">${holder ? holder.full_name : 'انتخاب نشده'}</td>
+                    <td class="py-3 px-4 text-xs font-semibold text-slate-200">${holder.full_name}</td>
                     <td class="py-3 px-4 text-center">
                       ${hasBounced 
                         ? `<span class="px-2 py-1 bg-rose-500/20 text-rose-400 rounded-md text-xs font-bold font-mono">برگشتی: ${this.formatMoney(inq.bounced_amount)}</span>`
@@ -623,9 +625,9 @@ const App = {
                     </td>
                     <td class="py-3 px-4 text-center">
                       <div class="flex items-center justify-center gap-2">
-                        <button onclick="App.openPasargadModalForCheque('${ch.sayadi_id}', ${c.id})" class="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white text-xs rounded-lg flex items-center gap-1 transition">
+                        <button onclick="App.inlineInquiryCheque('${ch.sayadi_id}', ${c.id}, this)" class="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white text-xs rounded-lg flex items-center gap-1 transition" title="استعلام زنده آنی بدون جابجایی صفحه">
                           <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-                          استعلام
+                          <span>استعلام</span>
                         </button>
                         <button onclick="App.openEditChequeModal(${ch.id})" class="p-1 text-amber-400 hover:bg-slate-700 rounded">
                           <i data-lucide="edit" class="w-3.5 h-3.5"></i>
@@ -642,6 +644,7 @@ const App = {
           </table>
         </div>
       </div>
+
 
       <!-- 📜 Comprehensive Customer Inquiries History & Audit Log -->
       <div class="p-6 pt-0">
@@ -742,8 +745,110 @@ const App = {
 
 
   // ─────────────────────────────────────────────────────────────
+  // ⚡ Inline Instant Pasargad Inquiry (In-place without navigating away)
+  // ─────────────────────────────────────────────────────────────
+  async inlineInquiryCheque(sayadiId, customerId, btnElement) {
+    if (!sayadiId || sayadiId.length !== 16) {
+      this.showToast('شناسه صیادی نامعتبر است.', 'error');
+      return;
+    }
+
+    const defaultHolder = this.state.holders[0] || { full_name: 'علی رمضانزاده', id: 1, national_id: '0921974061' };
+    const ch = this.state.cheques.find(c => c.sayadi_id === sayadiId);
+    const holder = (ch && this.state.holders.find(h => h.id === ch.holder_id)) || defaultHolder;
+    const finalCustId = customerId || (ch ? ch.customer_id : null);
+
+    // Set spinning loader on the button
+    const origHtml = btnElement ? btnElement.innerHTML : '';
+    if (btnElement) {
+      btnElement.disabled = true;
+      btnElement.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin text-amber-300"></i> <span class="text-[10px]">استعلام...</span>`;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    try {
+      const res = await window.PasargadInquiryEngine.queryCheque(sayadiId, holder.national_id, {
+        forceRefresh: true,
+        holderId: holder.id,
+        customerId: finalCustId
+      });
+
+      const inquiryRecord = {
+        id: Date.now(),
+        sayadi_id: sayadiId,
+        holder_id: holder.id,
+        customer_id: finalCustId,
+        inquiry_type: 'pasargad',
+        in_transit_amount: res.in_transit_amount,
+        in_transit_count: res.in_transit_count,
+        cleared_amount: res.cleared_amount,
+        cleared_count: res.cleared_count,
+        bounced_amount: res.bounced_amount,
+        bounced_count: res.bounced_count,
+        inquiry_time: new Date().toISOString(),
+        status: 'success'
+      };
+
+      this.state.inquiries.unshift(inquiryRecord);
+      if (ch) ch.holder_id = holder.id;
+      this.saveData();
+
+      this.showToast(`استعلام صیادی ${sayadiId} با موفقیت ثبت شد.`, 'success');
+
+      // Update current view or open modal smoothly in-place
+      if (this.state.selectedCustomer && this.state.selectedCustomer.id === finalCustId) {
+        this.viewCustomerProfile(finalCustId);
+      } else {
+        this.renderCurrentView();
+      }
+
+    } catch (err) {
+      if (btnElement) {
+        btnElement.disabled = false;
+        btnElement.innerHTML = origHtml;
+        if (window.lucide) lucide.createIcons();
+      }
+      this.showToast(`خطا در استعلام: ${err.message}`, 'error');
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // 📱 Window Management: Minimize / Maximize / FullScreen
+  // ─────────────────────────────────────────────────────────────
+  minimizeBulkModal() {
+    const modal = document.getElementById('bulk-inquiry-modal');
+    const pip = document.getElementById('bulk-pip-widget');
+    if (modal) modal.classList.add('hidden');
+    if (pip) {
+      pip.classList.remove('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+    this.showToast('استعلام در پس‌زمینه ادامه دارد. برای مشاهده روی ابزارک پایین کلیک کنید.', 'info');
+  },
+
+  maximizeBulkModal() {
+    const modal = document.getElementById('bulk-inquiry-modal');
+    const pip = document.getElementById('bulk-pip-widget');
+    if (pip) pip.classList.add('hidden');
+    if (modal) modal.classList.remove('hidden');
+  },
+
+  toggleFullScreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      this.showToast('حالت تمام‌صفحه فعال شد.', 'info');
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+        this.showToast('حالت تمام‌صفحه غیرفعال شد.', 'info');
+      }
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
   // 🏦 Live Single Pasargad Inquiry Action
   // ─────────────────────────────────────────────────────────────
+
   openPasargadModalForCheque(sayadiId, customerId) {
     document.getElementById('pasargad-sayadi-input').value = sayadiId || '';
     document.getElementById('pasargad-customer-id-hidden').value = customerId || '';
@@ -1026,6 +1131,11 @@ const App = {
           progressPercent.innerText = `${pct.toLocaleString('fa-IR')}٪`;
           progressText.innerText = `در حال بررسی چک ${state.processed.toLocaleString('fa-IR')} از ${state.total.toLocaleString('fa-IR')}...`;
 
+          const pipPct = document.getElementById('pip-progress-pct');
+          const pipSub = document.getElementById('pip-progress-sub');
+          if (pipPct) pipPct.innerText = `${pct.toLocaleString('fa-IR')}٪`;
+          if (pipSub) pipSub.innerText = `${state.processed.toLocaleString('fa-IR')} از ${state.total.toLocaleString('fa-IR')} (${state.successCount.toLocaleString('fa-IR')} موفق)`;
+
           document.getElementById('bulk-stat-success').innerText = state.successCount.toLocaleString('fa-IR');
           document.getElementById('bulk-stat-error').innerText = state.errorCount.toLocaleString('fa-IR');
           document.getElementById('bulk-stat-in-transit').innerText = App.formatMoney(state.inTransitSum);
@@ -1037,13 +1147,14 @@ const App = {
             sayadi_id: item.sayadi_id,
             holder_id: item.holder_id || defaultHolder.id,
             customer_id: item.customer_id,
+            inquiry_type: 'pasargad',
             in_transit_amount: res.in_transit_amount,
             in_transit_count: res.in_transit_count,
             cleared_amount: res.cleared_amount,
             cleared_count: res.cleared_count,
             bounced_amount: res.bounced_amount,
             bounced_count: res.bounced_count,
-            inquiry_time: res.inquiry_time,
+            inquiry_time: res.inquiry_time || new Date().toISOString(),
             status: 'success'
           };
 
@@ -1051,13 +1162,16 @@ const App = {
           if (existingIdx >= 0) {
             App.state.inquiries[existingIdx] = inquiryRecord;
           } else {
-            App.state.inquiries.push(inquiryRecord);
+            App.state.inquiries.unshift(inquiryRecord);
           }
           App.saveData();
         },
         onFinished: (summary) => {
           document.getElementById('btn-pause-bulk').classList.add('hidden');
           document.getElementById('btn-resume-bulk').classList.add('hidden');
+
+          const pipSub = document.getElementById('pip-progress-sub');
+          if (pipSub) pipSub.innerText = `استعلام پایان یافت (${summary.successCount} موفق)`;
 
           if (summary.errorCount > 0 && summary.failedItems && summary.failedItems.length > 0) {
             progressText.innerHTML = `<span class="text-amber-400 font-bold">پایان مرحله اول: ${summary.successCount} موفق | ${summary.errorCount} ناموفق (ترافیک بانک)</span>`;
@@ -1104,6 +1218,11 @@ const App = {
           progressPercent.innerText = `${pct.toLocaleString('fa-IR')}٪`;
           progressText.innerText = `در حال بررسی امن چک ${state.processed.toLocaleString('fa-IR')} از ${state.total.toLocaleString('fa-IR')}...`;
 
+          const pipPct = document.getElementById('pip-progress-pct');
+          const pipSub = document.getElementById('pip-progress-sub');
+          if (pipPct) pipPct.innerText = `${pct.toLocaleString('fa-IR')}٪`;
+          if (pipSub) pipSub.innerText = `استعلام مجدد: ${state.processed.toLocaleString('fa-IR')} از ${state.total.toLocaleString('fa-IR')}`;
+
           document.getElementById('bulk-stat-success').innerText = (parseInt(document.getElementById('bulk-stat-success').innerText) + state.successCount).toLocaleString('fa-IR');
           document.getElementById('bulk-stat-error').innerText = state.errorCount.toLocaleString('fa-IR');
           document.getElementById('bulk-stat-in-transit').innerText = App.formatMoney(state.inTransitSum);
@@ -1115,13 +1234,14 @@ const App = {
             sayadi_id: item.sayadi_id,
             holder_id: item.holder_id || defaultHolder.id,
             customer_id: item.customer_id,
+            inquiry_type: 'pasargad',
             in_transit_amount: res.in_transit_amount,
             in_transit_count: res.in_transit_count,
             cleared_amount: res.cleared_amount,
             cleared_count: res.cleared_count,
             bounced_amount: res.bounced_amount,
             bounced_count: res.bounced_count,
-            inquiry_time: res.inquiry_time,
+            inquiry_time: res.inquiry_time || new Date().toISOString(),
             status: 'success'
           };
 
@@ -1129,18 +1249,21 @@ const App = {
           if (existingIdx >= 0) {
             App.state.inquiries[existingIdx] = inquiryRecord;
           } else {
-            App.state.inquiries.push(inquiryRecord);
+            App.state.inquiries.unshift(inquiryRecord);
           }
           App.saveData();
         },
         onFinished: (summary) => {
           progressText.innerText = `استعلام مجدد به پایان رسید! (${summary.successCount} مورد بازیابی و با موفقیت ثبت شد)`;
+          const pipSub = document.getElementById('pip-progress-sub');
+          if (pipSub) pipSub.innerText = `استعلام مجدد به پایان رسید (${summary.successCount} موفق)`;
           App.showToast('موارد ناموفق با موفقیت استعلام شدند.', 'success');
           App.renderCurrentView();
         }
       }
     );
   },
+
 
   pauseBulkInquiry() {
     window.PasargadInquiryEngine.pauseBatch();
