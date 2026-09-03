@@ -256,3 +256,8 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
 def record_pasargad_inquiry(sayadi_id: str, holder_id: int = None, customer_id: int = None) -> dict:
     """Wrapper that invokes cascade inquiry."""
     return cascade_pasargad_inquiry(sayadi_id, preferred_holder_id=holder_id, customer_id=customer_id)
+
+def query_pasargad_bounced_cheques(sayadi_id: str, holder_national_id: str, id_type: str = "1", timeout: int = 8) -> dict:
+    """Backward compatibility wrapper."""
+    return query_single_holder(sayadi_id, holder_national_id, id_type=id_type, timeout=timeout)
+
