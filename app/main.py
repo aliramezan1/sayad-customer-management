@@ -70,6 +70,18 @@ if not os.path.exists(TEMPLATES_DIR):
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+# Mount subpaths so relative links (css/..., js/..., data/...) work identically
+css_dir = os.path.join(STATIC_DIR, "css")
+js_dir = os.path.join(STATIC_DIR, "js")
+data_dir = os.path.join(STATIC_DIR, "data")
+if os.path.exists(css_dir):
+    app.mount("/css", StaticFiles(directory=css_dir), name="css")
+if os.path.exists(js_dir):
+    app.mount("/js", StaticFiles(directory=js_dir), name="js")
+if os.path.exists(data_dir):
+    app.mount("/data", StaticFiles(directory=data_dir), name="data")
+
+
 @app.on_event("startup")
 def startup_event():
     """Initialize DB and start background scheduler on startup."""
