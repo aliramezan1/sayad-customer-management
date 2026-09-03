@@ -302,6 +302,8 @@ const App = {
       this.renderCustomersTable();
     } else if (this.state.currentTab === 'cheques') {
       this.renderChequesTable();
+    } else if (this.state.currentTab === 'logs') {
+      this.renderLogsView();
     }
   },
 
@@ -2118,6 +2120,271 @@ const App = {
       sidebar.classList.add('translate-x-full');
       if (backdrop) backdrop.classList.add('hidden');
     }
+  },
+  // ─────────────────────────────────────────────────────────────
+  // 📊 Smart Multi-Tier Logging, Diagnostics & Floating Drawer
+  // ─────────────────────────────────────────────────────────────
+  async renderLogsView() {
+    await this.refreshLogsView();
+  },
+
+  async refreshLogsView() {
+    const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
+    const levelSelect = document.getElementById('logs-filter-level');
+    const tagSelect = document.getElementById('logs-filter-tag');
+    const searchInput = document.getElementById('logs-search-input');
+
+    const level = levelSelect ? levelSelect.value : 'ALL';
+    const tag = tagSelect ? tagSelect.value : 'ALL';
+    const search = searchInput ? searchInput.value.trim() : '';
+
+    let logsList = [];
+    let stats = { total: 0, success: 0, warn: 0, error: 0 };
+
+    try {
+      const params = new URLSearchParams();
+      if (level && level !== 'ALL') params.append('level', level);
+      if (tag && tag !== 'ALL') params.append('tag', tag);
+      if (search) params.append('search', search);
+      params.append('limit', '200');
+
+      const res = await fetch(`${backendUrl}/api/logs?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        logsList = data.logs || [];
+        stats = data.stats || stats;
+      } else {
+        throw new Error('Endpoint error');
+      }
+    } catch (e) {
+      logsList = window.AppLogger.getLogs({ level, tag, search });
+      const allLogs = window.AppLogger.logs || [];
+      stats = {
+        total: allLogs.length,
+        success: allLogs.filter(l => l.level === 'SUCCESS').length,
+        warn: allLogs.filter(l => l.level === 'WARN').length,
+        error: allLogs.filter(l => l.level === 'ERROR').length
+      };
+    }
+
+    const totalEl = document.getElementById('metric-total-logs');
+    const succEl = document.getElementById('metric-success-logs');
+    const warnEl = document.getElementById('metric-warn-logs');
+    const errEl = document.getElementById('metric-error-logs');
+    const countEl = document.getElementById('logs-rendered-count');
+
+    if (totalEl) totalEl.innerText = (stats.total || 0).toLocaleString('fa-IR');
+    if (succEl) succEl.innerText = (stats.success || 0).toLocaleString('fa-IR');
+    if (warnEl) warnEl.innerText = (stats.warn || 0).toLocaleString('fa-IR');
+    if (errEl) errEl.innerText = (stats.error || 0).toLocaleString('fa-IR');
+    if (countEl) countEl.innerText = logsList.length.toLocaleString('fa-IR');
+
+    const tbody = document.getElementById('logs-table-body');
+    if (!tbody) return;
+
+    if (logsList.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center py-8 text-slate-500 font-sans">
+            هیچ لاگ یا رویدادی مطابق با فیلترهای انتخابی یافت نشد.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = logsList.map(l => {
+      const lvl = (l.level || 'INFO').toUpperCase();
+      const badgeColors = {
+        SUCCESS: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
+        INFO: 'bg-sky-500/15 text-sky-400 border border-sky-500/30',
+        WARN: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
+        ERROR: 'bg-rose-500/15 text-rose-400 border border-rose-500/30',
+        DEBUG: 'bg-slate-700/40 text-slate-400 border border-slate-600/30'
+      };
+      const badgeStyle = badgeColors[lvl] || badgeColors.INFO;
+
+      const tagColors = {
+        PASARGAD: 'text-amber-300 font-semibold',
+        CBI: 'text-blue-300 font-semibold',
+        DATABASE: 'text-purple-300',
+        SCHEDULER: 'text-sky-300',
+        SYSTEM: 'text-slate-300',
+        CLIENT: 'text-teal-300'
+      };
+      const tagStyle = tagColors[l.tag] || 'text-slate-400';
+      const rowId = `log-detail-${l.id || Math.random().toString(36).substring(2,7)}`;
+      const hasDetails = l.details && Object.keys(l.details).length > 0;
+
+      return `
+        <tr class="hover:bg-slate-800/40 transition">
+          <td class="p-3 text-slate-400 whitespace-nowrap">${l.jalali_time || l.timeFormatted || '---'}</td>
+          <td class="p-3 whitespace-nowrap">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeStyle}">${lvl}</span>
+          </td>
+          <td class="p-3 whitespace-nowrap font-bold ${tagStyle}">[${l.tag || l.category || 'SYSTEM'}]</td>
+          <td class="p-3 font-sans text-slate-200">${l.message || ''}</td>
+          <td class="p-3 font-mono text-slate-300 whitespace-nowrap">
+            ${l.sayadi_id ? `
+              <span class="inline-flex items-center gap-1 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-700/60">
+                <span>${l.sayadi_id}</span>
+                <button onclick="navigator.clipboard.writeText('${l.sayadi_id}'); App.showToast('شناسه کپی شد', 'info');" class="text-slate-400 hover:text-white" title="کپی شناسه">
+                  <i data-lucide="copy" class="w-3 h-3"></i>
+                </button>
+              </span>
+            ` : '<span class="text-slate-600">---</span>'}
+          </td>
+          <td class="p-3 text-slate-400 whitespace-nowrap font-mono">
+            ${l.duration_ms ? `${l.duration_ms}ms` : '---'}
+          </td>
+          <td class="p-3 text-center whitespace-nowrap">
+            ${hasDetails ? `
+              <button onclick="document.getElementById('${rowId}').classList.toggle('hidden')" class="p-1 rounded bg-slate-800 hover:bg-slate-700 text-indigo-400 transition" title="مشاهده جزئیات Payload">
+                <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+              </button>
+            ` : '<span class="text-slate-600">-</span>'}
+          </td>
+        </tr>
+        ${hasDetails ? `
+          <tr id="${rowId}" class="hidden bg-slate-950/80">
+            <td colspan="7" class="p-3 text-right">
+              <pre class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-[10px] text-slate-300 overflow-x-auto text-left font-mono">${JSON.stringify(l.details, null, 2)}</pre>
+            </td>
+          </tr>
+        ` : ''}
+      `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+  },
+
+  filterLogsView() {
+    this.refreshLogsView();
+  },
+
+  async checkGatewayHealthNow() {
+    const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
+    try {
+      const res = await fetch(`${backendUrl}/api/health`);
+      if (res.ok) {
+        const data = await res.json();
+        const gw = data.pasargad_gateway || {};
+        const isOnline = gw.status === 'online';
+
+        const badge = document.getElementById('logs-gateway-badge');
+        const text = document.getElementById('logs-gateway-text');
+        const miniHealth = document.getElementById('console-minibar-health-text');
+
+        if (text) text.innerText = `درگاه پاسارگاد: ${isOnline ? 'آنلاین' : 'کندی/ترافیک'} (${gw.latency_ms || 0}ms)`;
+        if (miniHealth) miniHealth.innerText = `درگاه بانک: ${isOnline ? 'آنلاین' : 'قطع'} (${gw.latency_ms || 0}ms)`;
+        if (badge) {
+          badge.className = `flex items-center gap-2 px-3.5 py-1.5 rounded-2xl ${isOnline ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'} text-xs font-semibold`;
+        }
+
+        this.showToast(`پایش درگاه بانک: ${isOnline ? 'آنلاین و فعال' : 'اختلال درگاه'} (${gw.latency_ms}ms)`, isOnline ? 'success' : 'warn');
+      }
+    } catch (e) {
+      this.showToast('خطا در ارتباط با سرور سلامت محلی', 'error');
+    }
+  },
+
+  consoleState: {
+    isOpen: false,
+    isPaused: false,
+    count: 0
+  },
+
+  toggleConsoleDrawer(force = null) {
+    const drawer = document.getElementById('console-drawer');
+    if (!drawer) return;
+    this.consoleState.isOpen = force !== null ? force : !this.consoleState.isOpen;
+    drawer.classList.toggle('hidden', !this.consoleState.isOpen);
+    if (window.lucide) lucide.createIcons();
+  },
+
+  toggleConsoleStreamPause() {
+    this.consoleState.isPaused = !this.consoleState.isPaused;
+    const btn = document.getElementById('btn-pause-stream');
+    if (btn) {
+      btn.innerText = this.consoleState.isPaused ? 'ادامه ثبت زنده' : 'توقف موقت';
+      btn.className = this.consoleState.isPaused ? 'px-2.5 py-1 rounded-lg bg-amber-600 text-white font-sans text-xs transition' : 'px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-sans text-xs transition';
+    }
+  },
+
+  clearConsoleDrawer() {
+    const feed = document.getElementById('console-drawer-feed');
+    if (feed) feed.innerHTML = '';
+    this.consoleState.count = 0;
+    const cnt = document.getElementById('console-drawer-count');
+    if (cnt) cnt.innerText = '۰ رخداد';
+  },
+
+  appendLiveLogEntry(entry) {
+    const latestEl = document.getElementById('console-minibar-latest');
+    if (latestEl) {
+      latestEl.innerText = `[${entry.level}] ${entry.message}`;
+    }
+
+    if (!this.consoleState.isPaused) {
+      const feed = document.getElementById('console-drawer-feed');
+      if (feed) {
+        this.consoleState.count++;
+        const cnt = document.getElementById('console-drawer-count');
+        if (cnt) cnt.innerText = `${this.consoleState.count.toLocaleString('fa-IR')} رخداد`;
+
+        const levelColors = {
+          SUCCESS: 'text-emerald-400',
+          INFO: 'text-sky-400',
+          WARN: 'text-amber-400',
+          ERROR: 'text-rose-400 font-bold',
+          DEBUG: 'text-slate-400'
+        };
+        const colorCls = levelColors[entry.level] || 'text-slate-300';
+        const line = document.createElement('div');
+        line.className = 'flex items-start gap-2 leading-relaxed hover:bg-slate-900/60 px-1 rounded transition';
+        line.innerHTML = `
+          <span class="text-slate-500 whitespace-nowrap">${entry.jalali_time || entry.timeFormatted || ''}</span>
+          <span class="font-bold ${colorCls} whitespace-nowrap">[${entry.level}]</span>
+          <span class="text-indigo-400 whitespace-nowrap">[${entry.tag || entry.category || 'SYS'}]</span>
+          <span class="text-slate-200 flex-1">${entry.message}</span>
+          ${entry.sayadi_id ? `<span class="text-slate-400 bg-slate-900 px-1.5 rounded font-mono text-[10px]">${entry.sayadi_id}</span>` : ''}
+        `;
+        feed.appendChild(line);
+        feed.scrollTop = feed.scrollHeight;
+
+        while (feed.children.length > 200) {
+          feed.removeChild(feed.firstChild);
+        }
+      }
+    }
+  },
+
+  exportLogsJSON() {
+    window.AppLogger.exportLogsAsJSON();
+    this.showToast('فایل JSON لاگ‌ها دانلود شد.', 'success');
+  },
+
+  exportLogsText() {
+    window.AppLogger.exportLogsAsText();
+    this.showToast('فایل متنی لاگ‌ها دانلود شد.', 'success');
+  },
+
+  clearSystemLogsPrompt() {
+    if (confirm('آیا از پاکسازی تمام لاگ‌های ثبت‌شده مطمئن هستید؟')) {
+      window.AppLogger.clearLogs();
+      this.clearConsoleDrawer();
+      this.refreshLogsView();
+      this.showToast('تمام لاگ‌ها با موفقیت پاکسازی شدند.', 'success');
+    }
+  },
+
+  openLogsModal() {
+    this.switchTab('logs');
+  },
+
+  closeLogsModal() {
+    const modal = document.getElementById('logs-modal');
+    if (modal) modal.classList.add('hidden');
   },
 
   setupEventListeners() {

@@ -85,6 +85,11 @@
           <i data-lucide="building-2" class="w-5 h-5"></i>
           <span>استعلام پاسارگاد</span>
         </button>
+
+        <button onclick="App.switchTab('logs'); App.toggleMobileSidebar(false);" data-tab="logs" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
+          <i data-lucide="terminal" class="w-5 h-5 text-indigo-400"></i>
+          <span>لاگ‌ها و عیب‌یابی</span>
+        </button>
       </nav>
 
     </div>
@@ -619,6 +624,168 @@
         </div>
       </section>
 
+      <!-- ─────────────────────────────────────────────────────────────
+           📊 Section 6: Dedicated Logs Analytics & Diagnostics View
+           ───────────────────────────────────────────────────────────── -->
+      <section id="view-logs" class="tab-view hidden space-y-6">
+        <!-- Header Banner -->
+        <div class="glass-card p-6 border border-indigo-500/25 bg-gradient-to-r from-indigo-900/30 via-slate-900/60 to-purple-900/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
+              <i data-lucide="terminal" class="w-6 h-6"></i>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold">سامانه پایش هوشمند وقایع، عیب‌یابی و لاگینگ</h2>
+              <p class="text-xs text-slate-400 mt-0.5">ثبت متمرکز با زمان تهران و تقویم شمسی | مانیتورینگ زنده سلامت درگاه بانک پاسارگاد و بانک مرکزی</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <div id="logs-gateway-badge" class="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span id="logs-gateway-text">درگاه پاسارگاد: آنلاین</span>
+            </div>
+            <button onclick="App.checkGatewayHealthNow()" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs flex items-center gap-1.5 transition" title="تست زنده اتصال به بانک">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+              <span>پینگ درگاه</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 Metric Cards for Logs -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div class="glass-card p-4 border border-slate-700/50 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] text-slate-400 font-bold mb-0.5">کل وقایع ثبت‌شده</p>
+              <h4 id="metric-total-logs" class="text-2xl font-black font-mono">۰</h4>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
+              <i data-lucide="list" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="glass-card p-4 border border-slate-700/50 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] text-emerald-400 font-bold mb-0.5">عملیات‌های موفق</p>
+              <h4 id="metric-success-logs" class="text-2xl font-black font-mono text-emerald-400">۰</h4>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+              <i data-lucide="check-circle" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="glass-card p-4 border border-slate-700/50 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] text-amber-400 font-bold mb-0.5">هشدارها و ترافیک</p>
+              <h4 id="metric-warn-logs" class="text-2xl font-black font-mono text-amber-400">۰</h4>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center">
+              <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="glass-card p-4 border border-slate-700/50 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] text-rose-400 font-bold mb-0.5">خطاهای درگاه / سیستم</p>
+              <h4 id="metric-error-logs" class="text-2xl font-black font-mono text-rose-400">۰</h4>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center">
+              <i data-lucide="x-circle" class="w-5 h-5"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Control Toolbar -->
+        <div class="glass-card p-4 border border-slate-700/50 space-y-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-400 mb-1">سطح رویداد (Level):</label>
+              <select id="logs-filter-level" onchange="App.filterLogsView()" class="w-full rounded-xl px-3 py-2 text-xs focus:outline-none bg-slate-900 border border-slate-700">
+                <option value="ALL" selected>همه سطوح (All Levels)</option>
+                <option value="SUCCESS">موفق (SUCCESS)</option>
+                <option value="INFO">اطلاعاتی (INFO)</option>
+                <option value="WARN">هشدار (WARN)</option>
+                <option value="ERROR">خطا (ERROR)</option>
+                <option value="DEBUG">جزئیات دیباگ (DEBUG)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-400 mb-1">دسته‌بندی (Category/Tag):</label>
+              <select id="logs-filter-tag" onchange="App.filterLogsView()" class="w-full rounded-xl px-3 py-2 text-xs focus:outline-none bg-slate-900 border border-slate-700">
+                <option value="ALL" selected>همه دسته‌ها (All Tags)</option>
+                <option value="PASARGAD">بانک پاسارگاد (PASARGAD)</option>
+                <option value="CBI">بانک مرکزی (CBI)</option>
+                <option value="DATABASE">پایگاه داده (DATABASE)</option>
+                <option value="SCHEDULER">زمان‌بند (SCHEDULER)</option>
+                <option value="API">سرویس API</option>
+                <option value="SYSTEM">سیستم (SYSTEM)</option>
+                <option value="CLIENT">سمت مرورگر (CLIENT)</option>
+              </select>
+            </div>
+
+            <div class="sm:col-span-2">
+              <label class="block text-[11px] font-semibold text-slate-400 mb-1">جستجوی متنی / شناسه صیادی / کدملی:</label>
+              <div class="relative">
+                <input id="logs-search-input" oninput="App.filterLogsView()" type="text" placeholder="جستجو در پیام، شناسه ۱۶ رقمی یا کدملی..." class="w-full rounded-xl pr-9 pl-3 py-2 text-xs focus:outline-none bg-slate-900 border border-slate-700">
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute right-3 top-2.5"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+            <div class="text-xs text-slate-400 flex items-center gap-2">
+              <span>نمایش <span id="logs-rendered-count" class="font-bold text-white">۰</span> ردیف</span>
+              <span class="text-slate-600">|</span>
+              <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="logs-auto-refresh-toggle" checked class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0">
+                <span class="text-[11px]">بروزرسانی خودکار زنده</span>
+              </label>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button onclick="App.refreshLogsView()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1 transition">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span>تازه‌سازی</span>
+              </button>
+              <button onclick="App.exportLogsJSON()" class="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold flex items-center gap-1 border border-indigo-500/30 transition">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span>دانلود JSON</span>
+              </button>
+              <button onclick="App.exportLogsText()" class="px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold flex items-center gap-1 border border-purple-500/30 transition">
+                <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                <span>دانلود متنی</span>
+              </button>
+              <button onclick="App.clearSystemLogsPrompt()" class="px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-semibold flex items-center gap-1 border border-rose-500/30 transition">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>پاکسازی</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logs Stream Table -->
+        <div class="glass-card border border-slate-700/50 rounded-2xl overflow-hidden">
+          <div class="overflow-x-auto max-h-[600px] overflow-y-auto">
+            <table class="w-full text-right text-xs">
+              <thead class="bg-slate-900/90 text-slate-400 font-bold sticky top-0 z-10 border-b border-slate-800">
+                <tr>
+                  <th class="p-3">زمان (تهران / شمسی)</th>
+                  <th class="p-3">سطح</th>
+                  <th class="p-3">دسته‌بندی</th>
+                  <th class="p-3">شرح رویداد / پیام استعلام</th>
+                  <th class="p-3">شناسه صیادی</th>
+                  <th class="p-3">زمان پاسخ</th>
+                  <th class="p-3 text-center">جزئیات</th>
+                </tr>
+              </thead>
+              <tbody id="logs-table-body" class="divide-y divide-slate-800/60 font-mono text-[11px]">
+                <!-- Rows injected dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
     </main>
   </div>
@@ -1030,6 +1197,54 @@
     <button class="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition" title="بزرگ‌نمایی پنجره">
       <i data-lucide="maximize-2" class="w-4 h-4"></i>
     </button>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       📟 Floating Real-Time Live Console Drawer
+       ───────────────────────────────────────────────────────────── -->
+  <div id="floating-live-console" class="fixed bottom-0 left-0 right-0 z-40 transition-all duration-300">
+    <!-- Collapsed Minibar -->
+    <div id="console-minibar" class="bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-300 shadow-2xl">
+      <div class="flex items-center gap-3">
+        <button id="btn-toggle-console" onclick="App.toggleConsoleDrawer()" class="flex items-center gap-2 px-3 py-1 rounded-xl bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 font-semibold transition-all">
+          <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+          <span>کنسول زنده</span>
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        </button>
+        <div class="hidden md:flex items-center gap-2 text-slate-400 truncate max-w-lg">
+          <span class="text-slate-500 font-sans">آخرین رویداد:</span>
+          <span id="console-minibar-latest" class="text-slate-200 font-sans truncate">سیستم آماده دریافت استعلامات صیادی است.</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div id="console-minibar-health" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-medium font-sans">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span id="console-minibar-health-text">درگاه بانک: آنلاین</span>
+        </div>
+        <button onclick="App.switchTab('logs')" class="p-1.5 text-slate-400 hover:text-indigo-400 rounded-lg transition" title="صفحه اختصاصی مدیریت لاگ‌ها">
+          <i data-lucide="maximize-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Expanded Drawer Window -->
+    <div id="console-drawer" class="hidden bg-slate-950/98 backdrop-blur-xl border-t border-slate-800 p-3 h-64 flex flex-col font-mono text-[11px]">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-800/80 text-slate-400">
+        <div class="flex items-center gap-2 font-sans">
+          <span class="font-bold text-slate-200 text-xs">کنسول نظارت لحظه‌ای بر استعلامات و خطایابی درگاه</span>
+          <span id="console-drawer-count" class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-[10px]">۰ رخداد</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-pause-stream" onclick="App.toggleConsoleStreamPause()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-sans text-xs transition">توقف موقت</button>
+          <button onclick="App.clearConsoleDrawer()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-sans text-xs transition">پاکسازی</button>
+          <button onclick="App.toggleConsoleDrawer(false)" class="p-1 text-slate-400 hover:text-white rounded-lg transition"><i data-lucide="chevron-down" class="w-4 h-4"></i></button>
+        </div>
+      </div>
+      <div id="console-drawer-feed" class="flex-1 overflow-y-auto space-y-1.5 py-2 select-text font-mono text-[11px]">
+        <!-- Streamed log lines -->
+      </div>
+    </div>
   </div>
 
   <!-- App Script -->

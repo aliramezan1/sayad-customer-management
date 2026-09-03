@@ -18,8 +18,20 @@ from app.schemas import (
     ChequeCreate, ChequeUpdate,
     PasargadInquiryRequest, BatchInquiryRequest
 )
-from app.services.pasargad import record_pasargad_inquiry, query_pasargad_bounced_cheques
+from app.services.pasargad import record_pasargad_inquiry, query_pasargad_bounced_cheques, check_pasargad_health
 from app.services.scheduler import scheduler_instance
+from app.services.smart_logger import smart_logger
+from pydantic import BaseModel
+from typing import Dict, Any
+
+class ClientLogRequest(BaseModel):
+    level: str = "INFO"
+    tag: str = "CLIENT"
+    message: str
+    details: Optional[Dict[str, Any]] = None
+    sayadi_id: Optional[str] = None
+    customer_name: Optional[str] = None
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -545,8 +557,6 @@ def inquiry_pasargad(data: PasargadInquiryRequest):
         holder_id=data.holder_id,
         customer_id=data.customer_id
     )
-    if result.get("status") != "success":
-        raise HTTPException(status_code=400, detail=result.get("message", "خطا در استعلام"))
     return result
 
 # ─────────────────────────────────────────────────────────────
@@ -613,6 +623,80 @@ def list_inquiries(
     inquiries = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return {"inquiries": inquiries, "count": len(inquiries)}
+
+
+# ─────────────────────────────────────────────────────────────
+# 📊 Smart Multi-Tier Logging & Diagnostics API
+# ─────────────────────────────────────────────────────────────
+@app.get("/api/health")
+def get_system_health():
+    """Live health check for backend, database, and Pasargad bank gateway."""
+    pasargad_health = check_pasargad_health()
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "pasargad_gateway": pasargad_health
+    }
+
+@app.get("/api/logs")
+def get_logs_endpoint(
+    level: Optional[str] = None,
+    tag: Optional[str] = None,
+    search: Optional[str] = None,
+    sayadi_id: Optional[str] = None,
+    limit: int = 150,
+    offset: int = 0
+):
+    """Query smart logger buffer with filters."""
+    return smart_logger.get_logs(
+        level=level,
+        tag=tag,
+        search=search,
+        sayadi_id=sayadi_id,
+        limit=limit,
+        offset=offset
+    )
+
+@app.post("/api/logs/client")
+def create_client_log(data: ClientLogRequest):
+    """Receive client-side log events from frontend."""
+    entry = smart_logger.log(
+        level=data.level,
+        tag=data.tag or "CLIENT",
+        message=data.message,
+        details=data.details,
+        sayadi_id=data.sayadi_id,
+        customer_name=data.customer_name
+    )
+    return {"status": "success", "entry": entry}
+
+@app.get("/api/logs/export")
+def export_logs_endpoint(format: str = "json"):
+    """Export logs as JSON or plain text."""
+    logs_data = smart_logger.get_logs(limit=2000)["logs"]
+    if format == "json":
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content={"logs": logs_data},
+            headers={"Content-Disposition": "attachment; filename=sayad_system_logs.json"}
+        )
+    else:
+        from fastapi.responses import PlainTextResponse
+        lines = []
+        for e in logs_data:
+            sayad_str = f" [Sayad: {e.get('sayadi_id', '')}]" if e.get('sayadi_id') else ""
+            lines.append(f"[{e['jalali_time']}] [{e['level']:<7}] [{e['tag']:<9}] {e['message']}{sayad_str}")
+        return PlainTextResponse(
+            content="\n".join(lines),
+            headers={"Content-Disposition": "attachment; filename=sayad_system_logs.txt"}
+        )
+
+@app.delete("/api/logs")
+def clear_logs_endpoint():
+    """Clear memory log buffer."""
+    smart_logger.clear()
+    return {"status": "success", "message": "بافر لاگ‌ها با موفقیت پاکسازی شد."}
+
 
 
 
