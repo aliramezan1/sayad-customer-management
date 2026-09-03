@@ -47,16 +47,17 @@ const App = {
     try {
       const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1200);
+      const timeout = setTimeout(() => controller.abort(), 1500);
 
       const statsRes = await fetch(`${backendUrl}/api/stats`, { signal: controller.signal });
       clearTimeout(timeout);
 
       if (statsRes.ok) {
-        const [custRes, chRes, holdRes] = await Promise.all([
-          fetch(`${backendUrl}/api/customers?limit=500`),
-          fetch(`${backendUrl}/api/cheques?limit=500`),
-          fetch(`${backendUrl}/api/holders`)
+        const [custRes, chRes, holdRes, inqRes] = await Promise.all([
+          fetch(`${backendUrl}/api/customers?limit=1000`),
+          fetch(`${backendUrl}/api/cheques?limit=1000`),
+          fetch(`${backendUrl}/api/holders`),
+          fetch(`${backendUrl}/api/inquiries?limit=3000`).catch(() => null)
         ]);
 
         if (custRes.ok && chRes.ok && holdRes.ok) {
@@ -69,14 +70,21 @@ const App = {
             this.state.cheques = chData.cheques || [];
             this.state.holders = holdData.holders || [];
 
-            // Load rich inquiries
-            try {
-              const inqRes = await fetch('data/initial_dataset.json');
-              if (inqRes.ok) {
-                const initData = await inqRes.json();
-                this.state.inquiries = initData.inquiries || [];
-              }
-            } catch (e) {}
+            if (inqRes && inqRes.ok) {
+              const inqData = await inqRes.json();
+              this.state.inquiries = inqData.inquiries || [];
+            }
+
+            // Fallback for inquiries if empty from endpoint
+            if (!this.state.inquiries || this.state.inquiries.length === 0) {
+              try {
+                const initRes = await fetch('data/initial_dataset.json');
+                if (initRes.ok) {
+                  const initData = await initRes.json();
+                  this.state.inquiries = initData.inquiries || [];
+                }
+              } catch (e) {}
+            }
 
             this.saveData();
             window.AppLogger.success('SYSTEM', `داده‌های زنده از پایگاه داده متصل سرور (${this.state.customers.length} مشتری، ${this.state.cheques.length} چک، ${this.state.inquiries.length} استعلام) بارگذاری شد.`);
@@ -93,7 +101,7 @@ const App = {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.customers && parsed.customers.length >= 20 && parsed.cheques && parsed.cheques.length >= 50 && parsed.inquiries && parsed.inquiries.length > 20) {
+        if (parsed.customers && parsed.customers.length >= 20 && parsed.cheques && parsed.cheques.length >= 50 && parsed.inquiries && parsed.inquiries.length >= 50) {
           this.state.holders = parsed.holders || [];
           this.state.customers = parsed.customers || [];
           this.state.cheques = parsed.cheques || [];
@@ -137,6 +145,9 @@ const App = {
     window.AppLogger.info('SYSTEM', 'در حال همگام‌سازی و بارگذاری مجدد کامل پایگاه داده...');
     localStorage.removeItem(this.STORAGE_KEY);
     localStorage.removeItem('sayad_app_local_data_v3');
+    localStorage.removeItem('sayad_app_local_data_v2');
+    localStorage.removeItem('sayad_app_local_data_v1');
+    localStorage.removeItem('sayad_app_local_data');
     await this.loadData();
     this.populateHolderDropdowns();
     this.renderHoldersList();

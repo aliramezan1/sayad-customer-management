@@ -582,6 +582,39 @@ def inquiry_dual(data: PasargadInquiryRequest):
         "message": "استعلام دوگانه بانک مرکزی و بانک پاسارگاد با موفقیت انجام شد."
     }
 
+@app.get("/api/inquiries")
+def list_inquiries(
+    sayadi_id: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    limit: int = 3000,
+    offset: int = 0
+):
+    """List pasargad inquiries history with optional filters."""
+    conn = get_db()
+    cursor = conn.cursor()
+    query = """
+    SELECT id, sayadi_id, holder_id, customer_id, in_transit_count, in_transit_amount,
+           cleared_count, cleared_amount, bounced_count, bounced_amount, raw_response,
+           status, inquiry_time
+    FROM pasargad_inquiries
+    WHERE 1=1
+    """
+    params = []
+    if sayadi_id:
+        query += " AND sayadi_id LIKE ?"
+        params.append(f"%{sayadi_id.strip()}%")
+    if customer_id:
+        query += " AND customer_id = ?"
+        params.append(customer_id)
+    query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    
+    cursor.execute(query, params)
+    inquiries = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return {"inquiries": inquiries, "count": len(inquiries)}
+
+
 
 # ─────────────────────────────────────────────────────────────
 # ⏰ Background Scheduler API

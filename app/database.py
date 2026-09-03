@@ -73,6 +73,8 @@ def init_db():
         amount REAL DEFAULT 0,
         cheque_date TEXT,
         bank_name TEXT,
+        original_name TEXT,
+        row_number INTEGER,
         holder_id INTEGER,
         status TEXT DEFAULT 'pending',
         notes TEXT,
@@ -282,6 +284,10 @@ def _migrate_existing_data(conn):
     
     if "customer_id" not in existing_cols:
         cursor.execute("ALTER TABLE cheques ADD COLUMN customer_id INTEGER")
+    if "original_name" not in existing_cols:
+        cursor.execute("ALTER TABLE cheques ADD COLUMN original_name TEXT")
+    if "row_number" not in existing_cols:
+        cursor.execute("ALTER TABLE cheques ADD COLUMN row_number INTEGER")
     if "holder_id" not in existing_cols:
         cursor.execute("ALTER TABLE cheques ADD COLUMN holder_id INTEGER")
     if "status" not in existing_cols:
