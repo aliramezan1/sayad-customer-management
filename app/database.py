@@ -142,11 +142,115 @@ def init_db():
 
     conn.commit()
 
+    # Seed data from initial_dataset.json if customers or cheques table is empty
+    cursor.execute("SELECT COUNT(*) FROM customers")
+    cust_count = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM cheques")
+    cheque_count = cursor.fetchone()[0]
+
+    if cust_count == 0 or cheque_count == 0:
+        _seed_from_initial_dataset(conn)
+
     # Run Data Migration from existing raw tables if needed
     _migrate_existing_data(conn)
 
     conn.close()
     logger.info("Database initialized & verified successfully.")
+
+def _seed_from_initial_dataset(conn):
+    """Seed customers, cheques, holders, and inquiries from bundled JSON dataset."""
+    import json
+    candidate_paths = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "initial_dataset.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "data", "initial_dataset.json"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "data", "initial_dataset.json"),
+    ]
+    json_path = None
+    for p in candidate_paths:
+        if os.path.exists(p):
+            json_path = p
+            break
+
+    if not json_path:
+        logger.warning("No initial_dataset.json found to seed.")
+        return
+
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        cursor = conn.cursor()
+        
+        # Customers
+        for cust in data.get("customers", []):
+            cursor.execute("""
+            INSERT INTO customers (id, full_name, national_id, phone, address, notes, credit_color, risk_score, original_name_alias, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(full_name) DO UPDATE SET
+                national_id = COALESCE(excluded.national_id, customers.national_id),
+                credit_color = excluded.credit_color,
+                risk_score = excluded.risk_score
+            """, (
+                cust.get("id"),
+                cust.get("full_name"),
+                cust.get("national_id"),
+                cust.get("phone"),
+                cust.get("address"),
+                cust.get("notes"),
+                cust.get("credit_color", "سفید"),
+                cust.get("risk_score", 5),
+                cust.get("original_name_alias"),
+                cust.get("created_at"),
+                cust.get("updated_at")
+            ))
+
+        # Cheques
+        for ch in data.get("cheques", []):
+            cursor.execute("""
+            INSERT OR IGNORE INTO cheques (id, customer_id, sayadi_id, cheque_number, amount, cheque_date, bank_name, original_name, row_number, holder_id, status, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ch.get("id"),
+                ch.get("customer_id"),
+                ch.get("sayadi_id"),
+                ch.get("cheque_number"),
+                ch.get("amount", 0),
+                ch.get("cheque_date"),
+                ch.get("bank_name"),
+                ch.get("original_name"),
+                ch.get("row_number"),
+                ch.get("holder_id", 1),
+                ch.get("status", "pending"),
+                ch.get("notes"),
+                ch.get("created_at"),
+                ch.get("updated_at")
+            ))
+
+        # Inquiries
+        for inq in data.get("inquiries", []):
+            cursor.execute("""
+            INSERT OR IGNORE INTO pasargad_inquiries (id, sayadi_id, holder_id, customer_id, in_transit_count, in_transit_amount, cleared_count, cleared_amount, bounced_count, bounced_amount, raw_response, status, inquiry_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                inq.get("id"),
+                inq.get("sayadi_id"),
+                inq.get("holder_id", 1),
+                inq.get("customer_id"),
+                inq.get("in_transit_count", 0),
+                inq.get("in_transit_amount", 0),
+                inq.get("cleared_count", 0),
+                inq.get("cleared_amount", 0),
+                inq.get("bounced_count", 0),
+                inq.get("bounced_amount", 0),
+                inq.get("raw_response"),
+                inq.get("status", "success"),
+                inq.get("inquiry_time")
+            ))
+
+        conn.commit()
+        logger.info(f"Seeded database successfully from {json_path}")
+    except Exception as e:
+        logger.error(f"Error seeding database from initial_dataset.json: {e}")
 
 def _migrate_existing_data(conn):
     """Migrate legacy cheques and inquiry_results into the relational customers and cheques schema."""
@@ -191,79 +295,3 @@ def _migrate_existing_data(conn):
 
     conn.commit()
 
-    # Check if legacy inquiry_results table exists
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inquiry_results'")
-    if not cursor.fetchone():
-        return
-
-    # Check if cheques already have customer_id assigned
-    cursor.execute("SELECT COUNT(*) FROM cheques WHERE customer_id IS NOT NULL")
-    existing_linked = cursor.fetchone()[0]
-
-    # If already migrated and customers exist, skip
-    cursor.execute("SELECT COUNT(*) FROM customers")
-    cust_count = cursor.fetchone()[0]
-    if existing_linked > 0 and cust_count > 0:
-        return
-
-    logger.info("Migrating existing CBI inquiries and cheques into relational customer profiles...")
-
-    # 1. Fetch all distinct customers from inquiry_results
-    import re
-    cursor.execute("""
-    SELECT DISTINCT 
-        COALESCE(NULLIF(ir.full_name, ''), c.original_name, 'مشتری نامشخص') as cust_name,
-        ir.raw_response,
-        c.original_name
-    FROM cheques c
-    LEFT JOIN inquiry_results ir ON c.sayadi_id = ir.sayadi_id
-    WHERE c.sayadi_id IS NOT NULL AND c.sayadi_id != ''
-    """)
-    rows = cursor.fetchall()
-
-    for r in rows:
-        cust_name = (r[0] or 'مشتری نامشخص').strip()
-        raw_resp = r[1] or ''
-        original_alias = r[2] or ''
-
-        # Extract color from raw_response
-        color_match = re.search(r'در وضعیت\s+([^\n\r<]+?)\s+در پایگاه داده', raw_resp)
-        credit_color = color_match.group(1).strip() if color_match else 'سفید'
-
-        # Map color to risk score
-        risk_map = {'سفید': 5, 'زرد': 20, 'نارنجی': 50, 'قهوه ای': 75, 'قهوه‌ای': 75, 'قرمز': 95}
-        risk_score = risk_map.get(credit_color, 10)
-
-        cursor.execute("""
-        INSERT INTO customers (full_name, credit_color, risk_score, original_name_alias)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(full_name) DO UPDATE SET
-            credit_color = COALESCE(excluded.credit_color, customers.credit_color),
-            risk_score = excluded.risk_score
-        """, (cust_name, credit_color, risk_score, original_alias))
-
-    conn.commit()
-
-    # 2. Link each cheque to its customer_id
-    cursor.execute("""
-    SELECT c.id, c.sayadi_id, ir.full_name, c.original_name
-    FROM cheques c
-    LEFT JOIN inquiry_results ir ON c.sayadi_id = ir.sayadi_id
-    """)
-    cheque_rows = cursor.fetchall()
-
-    for crow in cheque_rows:
-        cid = crow[0]
-        c_fullname = (crow[2] or '').strip()
-        c_orig = (crow[3] or '').strip()
-        target_name = c_fullname if c_fullname else (c_orig if c_orig else 'مشتری نامشخص')
-
-        # Find customer ID
-        cursor.execute("SELECT id FROM customers WHERE full_name = ?", (target_name,))
-        cust_res = cursor.fetchone()
-        if cust_res:
-            customer_db_id = cust_res[0]
-            cursor.execute("UPDATE cheques SET customer_id = ? WHERE id = ?", (customer_db_id, cid))
-
-    conn.commit()
-    logger.info("Data migration completed successfully.")

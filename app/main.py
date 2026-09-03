@@ -119,7 +119,7 @@ def get_dashboard_stats():
     total_cheques = ch_row[0]
     total_amount = ch_row[1]
 
-    # Pasargad inquiries sum
+    # Pasargad inquiries sum based on latest inquiry per distinct sayadi_id
     cursor.execute("""
     SELECT 
         COALESCE(SUM(in_transit_amount), 0),
@@ -127,6 +127,9 @@ def get_dashboard_stats():
         COALESCE(SUM(bounced_amount), 0),
         COALESCE(SUM(bounced_count), 0)
     FROM pasargad_inquiries
+    WHERE id IN (
+        SELECT MAX(id) FROM pasargad_inquiries GROUP BY sayadi_id
+    )
     """)
     pasargad_row = cursor.fetchone()
     in_transit_sum = pasargad_row[0]
@@ -186,13 +189,11 @@ def list_customers(
     SELECT 
         c.id, c.full_name, c.national_id, c.phone, c.address, c.notes,
         c.credit_color, c.risk_score, c.original_name_alias, c.created_at,
-        COUNT(ch.id) as cheque_count,
-        COALESCE(SUM(ch.amount), 0) as total_cheque_amount,
-        COALESCE(SUM(pi.in_transit_amount), 0) as in_transit_total,
-        COALESCE(SUM(pi.bounced_amount), 0) as bounced_total
+        (SELECT COUNT(*) FROM cheques WHERE customer_id = c.id) as cheque_count,
+        (SELECT COALESCE(SUM(amount), 0) FROM cheques WHERE customer_id = c.id) as total_cheque_amount,
+        (SELECT COALESCE(SUM(pi.in_transit_amount), 0) FROM pasargad_inquiries pi WHERE pi.customer_id = c.id AND pi.id IN (SELECT MAX(id) FROM pasargad_inquiries GROUP BY sayadi_id)) as in_transit_total,
+        (SELECT COALESCE(SUM(pi.bounced_amount), 0) FROM pasargad_inquiries pi WHERE pi.customer_id = c.id AND pi.id IN (SELECT MAX(id) FROM pasargad_inquiries GROUP BY sayadi_id)) as bounced_total
     FROM customers c
-    LEFT JOIN cheques ch ON c.id = ch.customer_id
-    LEFT JOIN pasargad_inquiries pi ON ch.sayadi_id = pi.sayadi_id
     WHERE 1=1
     """
     params = []
@@ -204,8 +205,7 @@ def list_customers(
             c.national_id LIKE ? OR 
             c.phone LIKE ? OR 
             c.original_name_alias LIKE ? OR
-            ch.sayadi_id LIKE ? OR
-            ch.cheque_number LIKE ?
+            EXISTS (SELECT 1 FROM cheques ch WHERE ch.customer_id = c.id AND (ch.sayadi_id LIKE ? OR ch.cheque_number LIKE ?))
         )"""
         params.extend([search_term, search_term, search_term, search_term, search_term, search_term])
 
@@ -213,7 +213,7 @@ def list_customers(
         query += " AND c.credit_color = ?"
         params.append(color.strip())
 
-    query += " GROUP BY c.id ORDER BY total_cheque_amount DESC, c.id DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY total_cheque_amount DESC, c.id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     cursor.execute(query, params)
@@ -221,6 +221,7 @@ def list_customers(
     conn.close()
 
     return {"customers": customers, "count": len(customers)}
+
 
 @app.get("/api/customers/{customer_id}")
 def get_customer_profile(customer_id: int):

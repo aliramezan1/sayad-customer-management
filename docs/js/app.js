@@ -3,7 +3,7 @@
  * Handles Data Persistence, View Navigation, Drilldowns, Holders CRUD, Batch Inquiry & Log Console.
  */
 const App = {
-  STORAGE_KEY: 'sayad_app_local_data_v3',
+  STORAGE_KEY: 'sayad_app_local_data_v4',
   state: {
     currentTab: 'dashboard',
     chequeFilterMode: 'all', // 'all', 'in-transit', 'cleared', 'bounced', 'sorted-amount'
@@ -43,29 +43,81 @@ const App = {
   // 💾 Data Storage & Persistence
   // ─────────────────────────────────────────────────────────────
   async loadData() {
+    // 1. Try to fetch live data from FastAPI backend if connected
+    try {
+      const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1200);
+
+      const statsRes = await fetch(`${backendUrl}/api/stats`, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (statsRes.ok) {
+        const [custRes, chRes, holdRes] = await Promise.all([
+          fetch(`${backendUrl}/api/customers?limit=500`),
+          fetch(`${backendUrl}/api/cheques?limit=500`),
+          fetch(`${backendUrl}/api/holders`)
+        ]);
+
+        if (custRes.ok && chRes.ok && holdRes.ok) {
+          const custData = await custRes.json();
+          const chData = await chRes.json();
+          const holdData = await holdRes.json();
+
+          if (custData.customers && custData.customers.length > 0) {
+            this.state.customers = custData.customers;
+            this.state.cheques = chData.cheques || [];
+            this.state.holders = holdData.holders || [];
+
+            // Load rich inquiries
+            try {
+              const inqRes = await fetch('data/initial_dataset.json');
+              if (inqRes.ok) {
+                const initData = await inqRes.json();
+                this.state.inquiries = initData.inquiries || [];
+              }
+            } catch (e) {}
+
+            this.saveData();
+            window.AppLogger.success('SYSTEM', `داده‌های زنده از پایگاه داده متصل سرور (${this.state.customers.length} مشتری، ${this.state.cheques.length} چک، ${this.state.inquiries.length} استعلام) بارگذاری شد.`);
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      // Backend offline or unreachable
+    }
+
+    // 2. Check localStorage (v4)
     const saved = localStorage.getItem(this.STORAGE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        this.state.holders = parsed.holders || [];
-        this.state.customers = parsed.customers || [];
-        this.state.cheques = parsed.cheques || [];
-        this.state.inquiries = parsed.inquiries || [];
-        return;
+        if (parsed.customers && parsed.customers.length >= 20 && parsed.cheques && parsed.cheques.length >= 50 && parsed.inquiries && parsed.inquiries.length > 20) {
+          this.state.holders = parsed.holders || [];
+          this.state.customers = parsed.customers || [];
+          this.state.cheques = parsed.cheques || [];
+          this.state.inquiries = parsed.inquiries || [];
+          window.AppLogger.info('SYSTEM', 'داده‌های جامع از حافظه محلی مرورگر بازیابی شد.');
+          return;
+        }
       } catch (e) {
         window.AppLogger.error('SYSTEM', 'خطا در بارگذاری داده‌های ذخیره‌شده محلی', e);
       }
     }
 
-    // Fallback: Fetch initial dataset bundled with repo
+    // 3. Fallback: Fetch bundled rich initial dataset
     try {
       const res = await fetch('data/initial_dataset.json');
-      const data = await res.json();
-      this.state.holders = data.holders || [];
-      this.state.customers = data.customers || [];
-      this.state.cheques = data.cheques || [];
-      this.state.inquiries = data.inquiries || [];
-      this.saveData();
+      if (res.ok) {
+        const data = await res.json();
+        this.state.holders = data.holders || [];
+        this.state.customers = data.customers || [];
+        this.state.cheques = data.cheques || [];
+        this.state.inquiries = data.inquiries || [];
+        this.saveData();
+        window.AppLogger.success('SYSTEM', `دیتاست جامع با ${this.state.customers.length} مشتری، ${this.state.cheques.length} چک و ${this.state.inquiries.length} سابقه استعلام بارگذاری شد.`);
+      }
     } catch (e) {
       window.AppLogger.error('SYSTEM', 'خطا در واکشی دیتاست اولیه', e);
     }
@@ -81,11 +133,23 @@ const App = {
     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(payload));
   },
 
+  async syncData() {
+    window.AppLogger.info('SYSTEM', 'در حال همگام‌سازی و بارگذاری مجدد کامل پایگاه داده...');
+    localStorage.removeItem(this.STORAGE_KEY);
+    localStorage.removeItem('sayad_app_local_data_v3');
+    await this.loadData();
+    this.populateHolderDropdowns();
+    this.renderHoldersList();
+    this.renderCurrentView();
+    this.showToast('پایگاه داده و دیتاست با موفقیت همگام‌سازی و بارگذاری مجدد شد.', 'success');
+  },
+
   resetToDefaultData() {
     if (!confirm('آیا می‌خواهید تمام داده‌ها به حالت اولیه (فایل اکسل اولیه) بازگردند؟ تمام تغییرات محلی ریست خواهد شد.')) {
       return;
     }
     localStorage.removeItem(this.STORAGE_KEY);
+    localStorage.removeItem('sayad_app_local_data_v3');
     window.AppLogger.warn('SYSTEM', 'پایگاه داده به مقادیر اولیه کارخانه بازگردانی شد.');
     window.location.reload();
   },
@@ -130,13 +194,25 @@ const App = {
     const totalCheques = this.state.cheques.length;
     const totalAmount = this.state.cheques.reduce((sum, ch) => sum + (parseFloat(ch.amount) || 0), 0);
 
-    const inTransitSum = this.state.inquiries.reduce((sum, i) => sum + (parseFloat(i.in_transit_amount) || 0), 0);
-    const clearedSum = this.state.inquiries.reduce((sum, i) => sum + (parseFloat(i.cleared_amount) || 0), 0);
-    const bouncedSum = this.state.inquiries.reduce((sum, i) => sum + (parseFloat(i.bounced_amount) || 0), 0);
+    // Map latest inquiry per distinct sayadi_id to prevent duplicate history additions
+    const latestInquiries = {};
+    (this.state.inquiries || []).forEach(i => {
+      const say = String(i.sayadi_id || '').trim();
+      if (say) {
+        if (!latestInquiries[say] || (i.id && i.id > (latestInquiries[say].id || 0))) {
+          latestInquiries[say] = i;
+        }
+      }
+    });
+    const uniqueInquiries = Object.values(latestInquiries);
 
-    const inTransitCount = this.state.inquiries.filter(i => i.in_transit_amount > 0).length;
-    const clearedCount = this.state.inquiries.filter(i => i.cleared_amount > 0).length;
-    const bouncedCount = this.state.inquiries.filter(i => i.bounced_amount > 0).length;
+    const inTransitSum = uniqueInquiries.reduce((sum, i) => sum + (parseFloat(i.in_transit_amount) || 0), 0);
+    const clearedSum = uniqueInquiries.reduce((sum, i) => sum + (parseFloat(i.cleared_amount) || 0), 0);
+    const bouncedSum = uniqueInquiries.reduce((sum, i) => sum + (parseFloat(i.bounced_amount) || 0), 0);
+
+    const inTransitCount = uniqueInquiries.filter(i => (parseFloat(i.in_transit_amount) || 0) > 0).length;
+    const clearedCount = uniqueInquiries.filter(i => (parseFloat(i.cleared_amount) || 0) > 0).length;
+    const bouncedCount = uniqueInquiries.filter(i => (parseFloat(i.bounced_amount) || 0) > 0).length;
 
     // Credit Color counts
     const colors = {};

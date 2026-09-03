@@ -159,11 +159,15 @@
           <span class="hidden sm:inline">استعلام کلی سبد</span>
         </button>
 
-
+        <!-- Database Sync Button -->
+        <button onclick="App.syncData()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-2xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 border border-slate-700/50 shadow-sm transition" title="همگام‌سازی و بارگذاری مجدد دیتابیس">
+          <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i>
+          <span class="hidden md:inline">همگام‌سازی دیتابیس</span>
+        </button>
 
         <button onclick="App.openAddCustomerModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
           <i data-lucide="user-plus" class="w-4 h-4"></i>
-          <span class="hidden sm:inline">مشتری جدید</span>
+          <span class="hidden md:inline">مشتری جدید</span>
         </button>
 
         <button onclick="App.openAddChequeModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
