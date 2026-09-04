@@ -220,16 +220,18 @@ def query_single_holder(
                 }
 
             elif response.status_code == 429:
-                _trigger_global_cooldown(2.5 * attempt)
+                _trigger_global_cooldown(1.5 * attempt)
                 smart_logger.log(
                     "WARN", "PASARGAD",
-                    f"ترافیک درگاه بانک (۴۲۹) - استراحت و تلاش مجدد مرحله ({attempt}/{retry_count}) برای {clean_id_code}",
+                    f"ترافیک درگاه بانک (۴۲۹) - تلاش مجدد ({attempt}/{retry_count}) برای {clean_id_code}",
                     sayadi_id=clean_sayadi,
                     details={"holder": clean_id_code, "status": 429, "attempt": attempt},
                     duration_ms=duration_ms
                 )
-                time.sleep(2.0 * attempt)
-                continue
+                if attempt < retry_count:
+                    time.sleep(1.0)
+                    continue
+                break
 
             else:
                 raw_txt = response.text
@@ -325,12 +327,12 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
             "message": "هیچ دارنده فعالی در سیستم تعریف نشده است."
         }
 
-    # 1. Fetch cheque info
+    # 1. Fetch cheque info (cheque table customer_id is authoritative)
     cursor.execute("SELECT customer_id, cheque_date, holder_id FROM cheques WHERE sayadi_id = ?", (clean_sayadi,))
     ch = cursor.fetchone()
     cheque_date = ""
     if ch:
-        if not customer_id and ch["customer_id"]:
+        if ch["customer_id"]:
             customer_id = ch["customer_id"]
         if not preferred_holder_id and ch["holder_id"]:
             preferred_holder_id = ch["holder_id"]
@@ -357,6 +359,7 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
     matched_holder = None
     last_error_msg = ""
     had_rate_limit = False
+    all_errors = True
 
     for idx, h in enumerate(holders):
         res = query_single_holder(clean_sayadi, h["national_id"])
@@ -364,20 +367,38 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
         if res["status"] == "success":
             successful_res = res
             matched_holder = h
+            all_errors = False
             break
         elif res["status"] == "rate_limited":
             had_rate_limit = True
+            all_errors = False
             last_error_msg = res.get("message", "")
             # Stop cascading to avoid bombarding other holders while rate-limited
             break
+        elif res["status"] == "not_in_cartable":
+            all_errors = False
+            last_error_msg = res.get("message", "")
         else:
             last_error_msg = res.get("message", "")
-            # Small pacing between holders
-            if idx < len(holders) - 1:
-                time.sleep(0.35)
-            continue
+            
+        if idx < len(holders) - 1:
+            time.sleep(0.35)
+        continue
 
     if successful_res and matched_holder:
+        # Resolve customer from owner's national ID ONLY IF customer_id is not already known
+        if not customer_id:
+            owners_list = successful_res.get("owners_info") or []
+            if owners_list and isinstance(owners_list, list) and len(owners_list) > 0:
+                first_owner = owners_list[0]
+                id_code = str(first_owner.get("idCode") or "").strip()
+                if id_code:
+                    cursor.execute("SELECT id, full_name FROM customers WHERE national_id = ? LIMIT 1", (id_code,))
+                    cust_match = cursor.fetchone()
+                    if cust_match:
+                        customer_id = cust_match["id"]
+                        customer_name = cust_match["full_name"]
+
         cursor.execute("""
         INSERT INTO pasargad_inquiries (
             sayadi_id, holder_id, customer_id,
@@ -412,14 +433,67 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
 
         return successful_res
 
+    # Check if a previous successful inquiry exists for this sayadi_id to preserve valid historical data
+    cursor.execute("""
+        SELECT * FROM pasargad_inquiries 
+        WHERE sayadi_id = ? AND (status = 'success' OR in_transit_amount > 0 OR cleared_amount > 0 OR bounced_amount > 0)
+        ORDER BY id DESC LIMIT 1
+    """, (clean_sayadi,))
+    prev_success = cursor.fetchone()
     conn.close()
+
+    prev_in_transit = prev_success["in_transit_amount"] if prev_success else 0
+    prev_in_transit_cnt = prev_success["in_transit_count"] if prev_success else 0
+    prev_cleared = prev_success["cleared_amount"] if prev_success else 0
+    prev_cleared_cnt = prev_success["cleared_count"] if prev_success else 0
+    prev_bounced = prev_success["bounced_amount"] if prev_success else 0
+    prev_bounced_cnt = prev_success["bounced_count"] if prev_success else 0
+    prev_holder_id = prev_success["holder_id"] if prev_success else (preferred_holder_id or 1)
+    has_history = bool(prev_success)
 
     # If the process was interrupted by rate limit, report rate_limited (NOT not_in_cartable)
     if had_rate_limit:
         return {
             "status": "rate_limited",
             "sayadi_id": clean_sayadi,
-            "message": "ترافیک بالای درگاه بانک پاسارگاد – لطفاً کمی بعد مجدداً استعلام بگیرید",
+            "holder_id": prev_holder_id,
+            "customer_id": customer_id,
+            "in_transit_amount": prev_in_transit,
+            "in_transit_count": prev_in_transit_cnt,
+            "cleared_amount": prev_cleared,
+            "cleared_count": prev_cleared_cnt,
+            "bounced_amount": prev_bounced,
+            "bounced_count": prev_bounced_cnt,
+            "preserved_from_history": has_history,
+            "message": "ترافیک بالای درگاه بانک پاسارگاد – لطفاً کمی بعد مجدداً استعلام بگیرید" + (" (اطلاعات معتبر قبلی حفظ شد)" if has_history else ""),
+            "raw_response": last_error_msg
+        }
+
+    # If all queries encountered connection/network error
+    if all_errors:
+        err_msg = f"خطای ارتباط با درگاه بانک پاسارگاد ({last_error_msg or 'عدم پاسخگویی'})"
+        if has_history:
+            err_msg += " (اطلاعات آخرین استعلام موفق حفظ شد)"
+        smart_logger.log(
+            "WARN", "PASARGAD",
+            f"{clean_sayadi}: {err_msg}",
+            sayadi_id=clean_sayadi,
+            customer_name=customer_name or "",
+            details={"last_error": last_error_msg, "preserved": has_history}
+        )
+        return {
+            "status": "error",
+            "sayadi_id": clean_sayadi,
+            "holder_id": prev_holder_id,
+            "customer_id": customer_id,
+            "in_transit_amount": prev_in_transit,
+            "in_transit_count": prev_in_transit_cnt,
+            "cleared_amount": prev_cleared,
+            "cleared_count": prev_cleared_cnt,
+            "bounced_amount": prev_bounced,
+            "bounced_count": prev_bounced_cnt,
+            "preserved_from_history": has_history,
+            "message": err_msg,
             "raw_response": last_error_msg
         }
 
@@ -433,24 +507,30 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
     else:
         human_status = "چک در کارتابل هیچ‌یک از ۹ دارنده صندوق یافت نشد"
     
+    if has_history:
+        human_status += " (اطلاعات آخرین استعلام موفق حفظ شد)"
+
     smart_logger.log(
         "WARN", "PASARGAD",
         f"{clean_sayadi}: {human_status}",
         sayadi_id=clean_sayadi,
         customer_name=customer_name or "",
-        details={"is_passed": is_passed, "last_error": last_error_msg}
+        details={"is_passed": is_passed, "last_error": last_error_msg, "preserved": has_history}
     )
 
     return {
         "status": "not_in_cartable",
         "sayadi_id": clean_sayadi,
         "is_passed_due": is_passed,
-        "in_transit_amount": 0,
-        "in_transit_count": 0,
-        "cleared_amount": 0,
-        "cleared_count": 0,
-        "bounced_amount": 0,
-        "bounced_count": 0,
+        "holder_id": prev_holder_id,
+        "customer_id": customer_id,
+        "in_transit_amount": prev_in_transit,
+        "in_transit_count": prev_in_transit_cnt,
+        "cleared_amount": prev_cleared,
+        "cleared_count": prev_cleared_cnt,
+        "bounced_amount": prev_bounced,
+        "bounced_count": prev_bounced_cnt,
+        "preserved_from_history": has_history,
         "message": human_status,
         "raw_response": last_error_msg
     }

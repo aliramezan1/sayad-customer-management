@@ -232,12 +232,15 @@ class PasargadEngine {
         bounced_amount: data.bounced_amount || 0,
         bounced_count: data.bounced_count || 0,
         owners_info: data.owners_info || [],
+        preserved_from_history: data.preserved_from_history || false,
         message: data.message || 'استعلام با موفقیت دریافت شد',
         is_passed_due: data.is_passed_due || false,
         inquiry_time: new Date().toISOString()
       };
 
-      this.cache.set(cacheKey, { timestamp: Date.now(), data: parsedResult });
+      if (parsedResult.status === 'success' || parsedResult.preserved_from_history) {
+        this.cache.set(cacheKey, { timestamp: Date.now(), data: parsedResult });
+      }
       
       if (parsedResult.status === 'success') {
         window.AppLogger.success('PASARGAD', `استعلام صیادی ${cleanSayadi} با دارنده (${parsedResult.holder_name || 'یافت‌شده'}) ثبت شد. (در راه: ${parsedResult.in_transit_amount.toLocaleString('fa-IR')} ریال | برگشتی: ${parsedResult.bounced_amount.toLocaleString('fa-IR')} ریال)`);

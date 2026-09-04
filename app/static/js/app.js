@@ -384,12 +384,12 @@ const App = {
     // Apply drilldown filter mode
     if (mode === 'in-transit') {
       list = list.filter(c => {
-        const inqs = this.state.inquiries.filter(i => i.customer_id === c.id || this.getCustomerCheques(c.id).some(ch => ch.sayadi_id === i.sayadi_id));
+        const inqs = this.getCustomerInquiries(c.id);
         return inqs.some(i => i.in_transit_amount > 0);
       });
       list.sort((a, b) => {
-        const sumA = this.state.inquiries.filter(i => i.customer_id === a.id || this.getCustomerCheques(a.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
-        const sumB = this.state.inquiries.filter(i => i.customer_id === b.id || this.getCustomerCheques(b.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
+        const sumA = this.getCustomerInquiries(a.id).reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
+        const sumB = this.getCustomerInquiries(b.id).reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
         return sumB - sumA;
       });
       if (filterBanner) {
@@ -405,12 +405,12 @@ const App = {
       }
     } else if (mode === 'cleared') {
       list = list.filter(c => {
-        const inqs = this.state.inquiries.filter(i => i.customer_id === c.id || this.getCustomerCheques(c.id).some(ch => ch.sayadi_id === i.sayadi_id));
+        const inqs = this.getCustomerInquiries(c.id);
         return inqs.some(i => i.cleared_amount > 0);
       });
       list.sort((a, b) => {
-        const sumA = this.state.inquiries.filter(i => i.customer_id === a.id || this.getCustomerCheques(a.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
-        const sumB = this.state.inquiries.filter(i => i.customer_id === b.id || this.getCustomerCheques(b.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
+        const sumA = this.getCustomerInquiries(a.id).reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
+        const sumB = this.getCustomerInquiries(b.id).reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
         return sumB - sumA;
       });
       if (filterBanner) {
@@ -426,12 +426,12 @@ const App = {
       }
     } else if (mode === 'bounced') {
       list = list.filter(c => {
-        const inqs = this.state.inquiries.filter(i => i.customer_id === c.id || this.getCustomerCheques(c.id).some(ch => ch.sayadi_id === i.sayadi_id));
+        const inqs = this.getCustomerInquiries(c.id);
         return inqs.some(i => i.bounced_amount > 0);
       });
       list.sort((a, b) => {
-        const sumA = this.state.inquiries.filter(i => i.customer_id === a.id || this.getCustomerCheques(a.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
-        const sumB = this.state.inquiries.filter(i => i.customer_id === b.id || this.getCustomerCheques(b.id).some(ch => ch.sayadi_id === i.sayadi_id)).reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
+        const sumA = this.getCustomerInquiries(a.id).reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
+        const sumB = this.getCustomerInquiries(b.id).reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
         return sumB - sumA;
       });
       if (filterBanner) {
@@ -493,7 +493,7 @@ const App = {
 
     container.innerHTML = list.map((c, idx) => {
       const cheques = this.getCustomerCheques(c.id);
-      const inqs = this.state.inquiries.filter(i => i.customer_id === c.id || cheques.some(ch => ch.sayadi_id === i.sayadi_id));
+      const inqs = this.getCustomerInquiries(c.id);
       
       const inTransitSum = inqs.reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
       const clearedSum = inqs.reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
@@ -569,8 +569,8 @@ const App = {
     // Apply drilldown filter mode
     if (mode === 'in-transit') {
       list = list.filter(ch => {
-        const inq = this.state.inquiries.find(i => i.sayadi_id === ch.sayadi_id);
-        return inq && inq.in_transit_amount > 0;
+        const inq = this.getLatestInquiry(ch.sayadi_id);
+        return inq && (parseFloat(inq.in_transit_amount) || 0) > 0;
       });
       filterBanner.innerHTML = `
         <div class="p-3 bg-sky-500/10 border border-sky-500/30 rounded-xl flex items-center justify-between">
@@ -583,8 +583,8 @@ const App = {
       filterBanner.classList.remove('hidden');
     } else if (mode === 'cleared') {
       list = list.filter(ch => {
-        const inq = this.state.inquiries.find(i => i.sayadi_id === ch.sayadi_id);
-        return inq && inq.cleared_amount > 0;
+        const inq = this.getLatestInquiry(ch.sayadi_id);
+        return inq && (parseFloat(inq.cleared_amount) || 0) > 0;
       });
       filterBanner.innerHTML = `
         <div class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between">
@@ -597,8 +597,8 @@ const App = {
       filterBanner.classList.remove('hidden');
     } else if (mode === 'bounced') {
       list = list.filter(ch => {
-        const inq = this.state.inquiries.find(i => i.sayadi_id === ch.sayadi_id);
-        return inq && inq.bounced_amount > 0;
+        const inq = this.getLatestInquiry(ch.sayadi_id);
+        return inq && (parseFloat(inq.bounced_amount) || 0) > 0;
       });
       filterBanner.innerHTML = `
         <div class="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center justify-between">
@@ -653,7 +653,7 @@ const App = {
 
     container.innerHTML = list.map((ch, idx) => {
       const cust = this.state.customers.find(c => c.id === ch.customer_id);
-      const inq = this.state.inquiries.find(i => i.sayadi_id === ch.sayadi_id);
+      const inq = this.getLatestInquiry(ch.sayadi_id);
       const defaultHolder = this.state.holders[0] || { full_name: 'علی رمضانزاده', id: 1, national_id: '0921974061' };
       const holder = this.state.holders.find(h => h.id === ch.holder_id) || defaultHolder;
 
@@ -704,10 +704,11 @@ const App = {
     const cheques = this.getCustomerCheques(customerId);
     const totalAmount = cheques.reduce((s, ch) => s + (parseFloat(ch.amount) || 0), 0);
 
-    const inquiries = this.state.inquiries.filter(i => i.customer_id === customerId || cheques.some(ch => ch.sayadi_id === i.sayadi_id));
+    const inquiries = this.getCustomerInquiries(customerId);
     const inTransitSum = inquiries.reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
     const clearedSum = inquiries.reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
     const bouncedSum = inquiries.reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
+    const historyInquiries = this.getCustomerInquiriesHistory(customerId);
 
     this.state.selectedCustomer = c;
     const modal = document.getElementById('customer-profile-modal');
@@ -792,8 +793,8 @@ const App = {
               ${cheques.map(ch => {
                 const defaultHolder = this.state.holders[0] || { full_name: 'علی رمضانزاده', id: 1, national_id: '0921974061' };
                 const holder = this.state.holders.find(h => h.id === ch.holder_id) || defaultHolder;
-                const inq = this.state.inquiries.find(i => i.sayadi_id === ch.sayadi_id);
-                const hasBounced = inq && inq.bounced_amount > 0;
+                const inq = this.getLatestInquiry(ch.sayadi_id);
+                const hasBounced = inq && (parseFloat(inq.bounced_amount) || 0) > 0;
 
                 return `
                   <tr class="hover:bg-slate-800/30 transition">
@@ -838,7 +839,7 @@ const App = {
             <i data-lucide="history" class="w-5 h-5 text-indigo-400"></i>
             سوابق و تاریخچه استعلام‌های این مشتری (به وقت تهران)
           </h3>
-          <span class="text-xs text-slate-400 font-mono">${inquiries.length.toLocaleString('fa-IR')} رکورد استعلام ثبت‌شده</span>
+          <span class="text-xs text-slate-400 font-mono">${historyInquiries.length.toLocaleString('fa-IR')} رکورد استعلام ثبت‌شده</span>
         </div>
 
         <div class="overflow-x-auto rounded-xl border border-slate-700/60">
@@ -857,13 +858,13 @@ const App = {
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-800/60 font-mono text-xs">
-              ${inquiries.length === 0 ? `
+              ${historyInquiries.length === 0 ? `
                 <tr>
                   <td colspan="9" class="text-center py-6 text-slate-500 font-sans text-xs">
                     هنوز هیچ سابقه‌ای برای استعلام چک‌های این مشتری ثبت نشده است.
                   </td>
                 </tr>
-              ` : inquiries.map((inq, idx) => {
+              ` : historyInquiries.map((inq, idx) => {
                 const holder = this.state.holders.find(h => h.id === inq.holder_id);
                 const hasBounced = inq.bounced_amount > 0;
                 const formattedTime = this.formatTehranShamsi(inq.inquiry_time || inq.created_at);
@@ -961,36 +962,64 @@ const App = {
       const matchedHolderId = res.holder_id || holder.id;
       const matchedHolder = this.state.holders.find(h => h.id === matchedHolderId) || holder;
 
-      const inquiryRecord = {
-        id: Date.now(),
-        sayadi_id: sayadiId,
-        holder_id: matchedHolderId,
-        customer_id: finalCustId,
-        inquiry_type: 'pasargad',
-        in_transit_amount: res.in_transit_amount,
-        in_transit_count: res.in_transit_count,
-        cleared_amount: res.cleared_amount,
-        cleared_count: res.cleared_count,
-        bounced_amount: res.bounced_amount,
-        bounced_count: res.bounced_count,
-        inquiry_time: new Date().toISOString(),
-        status: res.status || 'success'
-      };
-
-      const existingIdx = this.state.inquiries.findIndex(i => i.sayadi_id === sayadiId);
-      if (existingIdx >= 0) {
-        this.state.inquiries[existingIdx] = inquiryRecord;
-      } else {
-        this.state.inquiries.unshift(inquiryRecord);
-      }
-
-      if (ch) ch.holder_id = matchedHolderId;
-      this.saveData();
+      const latestInq = this.getLatestInquiry(sayadiId);
+      const hasValidExisting = latestInq && (
+        (parseFloat(latestInq.in_transit_amount) || 0) > 0 ||
+        (parseFloat(latestInq.cleared_amount) || 0) > 0 ||
+        (parseFloat(latestInq.bounced_amount) || 0) > 0
+      );
 
       if (res.status === 'success') {
+        const inquiryRecord = {
+          id: Date.now(),
+          sayadi_id: sayadiId,
+          holder_id: matchedHolderId,
+          customer_id: finalCustId,
+          inquiry_type: 'pasargad',
+          in_transit_amount: parseFloat(res.in_transit_amount) || 0,
+          in_transit_count: parseInt(res.in_transit_count) || 0,
+          cleared_amount: parseFloat(res.cleared_amount) || 0,
+          cleared_count: parseInt(res.cleared_count) || 0,
+          bounced_amount: parseFloat(res.bounced_amount) || 0,
+          bounced_count: parseInt(res.bounced_count) || 0,
+          inquiry_time: new Date().toISOString(),
+          status: 'success'
+        };
+
+        this.state.inquiries.unshift(inquiryRecord);
+        if (ch) ch.holder_id = matchedHolderId;
+        this.saveData();
+
         this.showToast(`استعلام دارنده (${matchedHolder.full_name}) با موفقیت ثبت شد.`, 'success');
       } else {
-        this.showToast(res.message || 'نتیجه استعلام ثبت شد.', 'info');
+        // Inquiry was not successful (not_in_cartable, rate_limited, or error)
+        // CRITICAL: NEVER wipe existing valid numbers with 0s!
+        if (hasValidExisting) {
+          // Keep existing valid numbers! Do not touch or overwrite with zeros.
+          this.showToast(`${res.message || 'چک در کارتابل یافت نشد'} (اطلاعات معتبر قبلی حفظ شد)`, 'warn');
+        } else if (res.preserved_from_history && ((parseFloat(res.in_transit_amount) || 0) > 0 || (parseFloat(res.cleared_amount) || 0) > 0 || (parseFloat(res.bounced_amount) || 0) > 0)) {
+          // Backend returned preserved historical record
+          const inquiryRecord = {
+            id: Date.now(),
+            sayadi_id: sayadiId,
+            holder_id: matchedHolderId,
+            customer_id: finalCustId,
+            inquiry_type: 'pasargad',
+            in_transit_amount: parseFloat(res.in_transit_amount) || 0,
+            in_transit_count: parseInt(res.in_transit_count) || 0,
+            cleared_amount: parseFloat(res.cleared_amount) || 0,
+            cleared_count: parseInt(res.cleared_count) || 0,
+            bounced_amount: parseFloat(res.bounced_amount) || 0,
+            bounced_count: parseInt(res.bounced_count) || 0,
+            inquiry_time: latestInq ? latestInq.inquiry_time : new Date().toISOString(),
+            status: 'success'
+          };
+          this.state.inquiries.unshift(inquiryRecord);
+          this.saveData();
+          this.showToast(`${res.message || 'چک در کارتابل یافت نشد'} (اطلاعات معتبر قبلی حفظ شد)`, 'warn');
+        } else {
+          this.showToast(res.message || 'چک در کارتابل هیچ‌یک از دارندگان یافت نشد.', 'warn');
+        }
       }
 
       // Update current view or open modal smoothly in-place
@@ -1074,7 +1103,9 @@ const App = {
 
     try {
       const res = await window.PasargadInquiryEngine.queryCheque(sayadiId, holder.national_id, {
-        forceRefresh: true
+        forceRefresh: true,
+        holderId: holder.id,
+        customerId: customerId
       });
 
       btn.disabled = false;
@@ -1084,37 +1115,83 @@ const App = {
       // Record in state
       const ch = this.state.cheques.find(c => c.sayadi_id === sayadiId);
       const finalCustomerId = customerId || (ch ? ch.customer_id : null);
+      const latestInq = this.getLatestInquiry(sayadiId);
+      const hasValidExisting = latestInq && (
+        (parseFloat(latestInq.in_transit_amount) || 0) > 0 ||
+        (parseFloat(latestInq.cleared_amount) || 0) > 0 ||
+        (parseFloat(latestInq.bounced_amount) || 0) > 0
+      );
 
-      const inquiryRecord = {
-        id: Date.now(),
-        sayadi_id: sayadiId,
-        holder_id: holder.id,
-        customer_id: finalCustomerId,
-        inquiry_type: 'pasargad',
-        in_transit_amount: res.in_transit_amount,
-        in_transit_count: res.in_transit_count,
-        cleared_amount: res.cleared_amount,
-        cleared_count: res.cleared_count,
-        bounced_amount: res.bounced_amount,
-        bounced_count: res.bounced_count,
-        inquiry_time: new Date().toISOString(),
-        status: 'success'
-      };
+      if (res.status === 'success') {
+        const inquiryRecord = {
+          id: Date.now(),
+          sayadi_id: sayadiId,
+          holder_id: res.holder_id || holder.id,
+          customer_id: finalCustomerId,
+          inquiry_type: 'pasargad',
+          in_transit_amount: parseFloat(res.in_transit_amount) || 0,
+          in_transit_count: parseInt(res.in_transit_count) || 0,
+          cleared_amount: parseFloat(res.cleared_amount) || 0,
+          cleared_count: parseInt(res.cleared_count) || 0,
+          bounced_amount: parseFloat(res.bounced_amount) || 0,
+          bounced_count: parseInt(res.bounced_count) || 0,
+          inquiry_time: new Date().toISOString(),
+          status: 'success'
+        };
 
-      this.state.inquiries.unshift(inquiryRecord);
+        this.state.inquiries.unshift(inquiryRecord);
 
-      if (ch) ch.holder_id = holder.id;
-      this.saveData();
+        if (ch) ch.holder_id = res.holder_id || holder.id;
+        this.saveData();
 
-      // Display result box
-      const resultCard = document.getElementById('pasargad-result-card');
-      resultCard.classList.remove('hidden');
-      document.getElementById('res-holder-name').innerText = holder.full_name;
-      document.getElementById('res-in-transit').innerText = this.formatMoney(res.in_transit_amount) + ' ریال';
-      document.getElementById('res-cleared').innerText = this.formatMoney(res.cleared_amount) + ' ریال';
-      document.getElementById('res-bounced').innerText = this.formatMoney(res.bounced_amount) + ' ریال';
+        // Display result box
+        const resultCard = document.getElementById('pasargad-result-card');
+        resultCard.classList.remove('hidden');
+        document.getElementById('res-holder-name').innerText = res.holder_name || holder.full_name;
+        document.getElementById('res-in-transit').innerText = this.formatMoney(res.in_transit_amount) + ' ریال';
+        document.getElementById('res-cleared').innerText = this.formatMoney(res.cleared_amount) + ' ریال';
+        document.getElementById('res-bounced').innerText = this.formatMoney(res.bounced_amount) + ' ریال';
 
-      this.showToast('استعلام با موفقیت از بانک پاسارگاد دریافت و در سوابق ذخیره شد.', 'success');
+        this.showToast('استعلام با موفقیت از بانک پاسارگاد دریافت و در سوابق ذخیره شد.', 'success');
+      } else {
+        // Handle non-success: preserve existing valid data
+        const displayInTransit = (hasValidExisting ? latestInq.in_transit_amount : 0) || parseFloat(res.in_transit_amount) || 0;
+        const displayCleared = (hasValidExisting ? latestInq.cleared_amount : 0) || parseFloat(res.cleared_amount) || 0;
+        const displayBounced = (hasValidExisting ? latestInq.bounced_amount : 0) || parseFloat(res.bounced_amount) || 0;
+
+        if (displayInTransit > 0 || displayCleared > 0 || displayBounced > 0) {
+          if (!hasValidExisting && res.preserved_from_history) {
+            const inquiryRecord = {
+              id: Date.now(),
+              sayadi_id: sayadiId,
+              holder_id: res.holder_id || holder.id,
+              customer_id: finalCustomerId,
+              inquiry_type: 'pasargad',
+              in_transit_amount: displayInTransit,
+              in_transit_count: res.in_transit_count || 1,
+              cleared_amount: displayCleared,
+              cleared_count: res.cleared_count || 1,
+              bounced_amount: displayBounced,
+              bounced_count: res.bounced_count || 1,
+              inquiry_time: new Date().toISOString(),
+              status: 'success'
+            };
+            this.state.inquiries.unshift(inquiryRecord);
+            this.saveData();
+          }
+
+          const resultCard = document.getElementById('pasargad-result-card');
+          resultCard.classList.remove('hidden');
+          document.getElementById('res-holder-name').innerText = '(آخرین سابقه معتبر) ' + (res.holder_name || holder.full_name);
+          document.getElementById('res-in-transit').innerText = this.formatMoney(displayInTransit) + ' ریال';
+          document.getElementById('res-cleared').innerText = this.formatMoney(displayCleared) + ' ریال';
+          document.getElementById('res-bounced').innerText = this.formatMoney(displayBounced) + ' ریال';
+          this.showToast(`${res.message || 'چک در کارتابل یافت نشد'} (اطلاعات معتبر قبلی حفظ شد)`, 'warn');
+        } else {
+          this.showToast(res.message || 'چک در کارتابل هیچ‌یک از دارندگان یافت نشد.', 'warn');
+        }
+      }
+
       this.renderCurrentView();
 
     } catch (err) {
@@ -1742,7 +1819,7 @@ const App = {
     const rows = this.state.cheques.map((ch, idx) => {
       const cust = this.state.customers.find(c => c.id === ch.customer_id) || {};
       const holder = this.state.holders.find(h => h.id === ch.holder_id) || {};
-      const inq = this.state.inquiries.find(i => i.sayadi_id === ch.sayadi_id) || {};
+      const inq = this.getLatestInquiry(ch.sayadi_id) || {};
 
       return {
         'ردیف': idx + 1,
@@ -1984,6 +2061,58 @@ const App = {
   // ─────────────────────────────────────────────────────────────
   getCustomerCheques(customerId) {
     return this.state.cheques.filter(ch => ch.customer_id === customerId);
+  },
+
+  getLatestInquiry(sayadiId) {
+    if (!sayadiId) return null;
+    const cleanId = String(sayadiId).trim();
+    const inqs = this.state.inquiries.filter(i => String(i.sayadi_id).trim() === cleanId);
+    if (!inqs || inqs.length === 0) return null;
+    if (inqs.length === 1) return inqs[0];
+    return inqs.reduce((best, cur) => {
+      const timeCur = cur.inquiry_time ? new Date(cur.inquiry_time).getTime() : (cur.id || 0);
+      const timeBest = best.inquiry_time ? new Date(best.inquiry_time).getTime() : (best.id || 0);
+      if (timeCur !== timeBest) {
+        return timeCur > timeBest ? cur : best;
+      }
+      return (cur.id || 0) >= (best.id || 0) ? cur : best;
+    });
+  },
+
+  getCustomerInquiries(customerId) {
+    const cheques = this.getCustomerCheques(customerId);
+    const inqList = [];
+    const seenSayadi = new Set();
+
+    cheques.forEach(ch => {
+      if (ch.sayadi_id && !seenSayadi.has(ch.sayadi_id)) {
+        seenSayadi.add(ch.sayadi_id);
+        const latest = this.getLatestInquiry(ch.sayadi_id);
+        if (latest) inqList.push(latest);
+      }
+    });
+
+    const customerInqs = this.state.inquiries.filter(i => i.customer_id === customerId);
+    customerInqs.forEach(inq => {
+      if (inq.sayadi_id && !seenSayadi.has(inq.sayadi_id)) {
+        seenSayadi.add(inq.sayadi_id);
+        const latest = this.getLatestInquiry(inq.sayadi_id);
+        if (latest) inqList.push(latest);
+      }
+    });
+
+    return inqList;
+  },
+
+  getCustomerInquiriesHistory(customerId) {
+    const cheques = this.getCustomerCheques(customerId);
+    const chequesSayadi = new Set(cheques.map(c => c.sayadi_id));
+    const list = this.state.inquiries.filter(i => i.customer_id === customerId || chequesSayadi.has(i.sayadi_id));
+    return [...list].sort((a, b) => {
+      const timeA = a.inquiry_time ? new Date(a.inquiry_time).getTime() : (a.id || 0);
+      const timeB = b.inquiry_time ? new Date(b.inquiry_time).getTime() : (b.id || 0);
+      return (timeB || 0) - (timeA || 0);
+    });
   },
 
   getCustomerChequesSum(customerId) {

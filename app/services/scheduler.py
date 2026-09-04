@@ -133,6 +133,21 @@ class DailyScheduler:
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
+    def get_status(self) -> dict:
+        """Get current scheduler status and recent logs."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM scheduler_logs ORDER BY id DESC LIMIT 10")
+        logs = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return {
+            "is_running": self.is_running,
+            "current_status": self.status,
+            "last_run": self.last_run,
+            "recent_logs": logs
+        }
+
     def stop(self):
         """Stop the background scheduler."""
         self.is_running = False

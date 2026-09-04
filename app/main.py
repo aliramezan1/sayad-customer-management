@@ -203,8 +203,8 @@ def list_customers(
         c.credit_color, c.risk_score, c.original_name_alias, c.created_at,
         (SELECT COUNT(*) FROM cheques WHERE customer_id = c.id) as cheque_count,
         (SELECT COALESCE(SUM(amount), 0) FROM cheques WHERE customer_id = c.id) as total_cheque_amount,
-        (SELECT COALESCE(SUM(pi.in_transit_amount), 0) FROM pasargad_inquiries pi WHERE pi.customer_id = c.id AND pi.id IN (SELECT MAX(id) FROM pasargad_inquiries GROUP BY sayadi_id)) as in_transit_total,
-        (SELECT COALESCE(SUM(pi.bounced_amount), 0) FROM pasargad_inquiries pi WHERE pi.customer_id = c.id AND pi.id IN (SELECT MAX(id) FROM pasargad_inquiries GROUP BY sayadi_id)) as bounced_total
+        (SELECT COALESCE(SUM(pi.in_transit_amount), 0) FROM pasargad_inquiries pi WHERE (pi.sayadi_id IN (SELECT sayadi_id FROM cheques WHERE customer_id = c.id) OR (pi.customer_id = c.id AND pi.sayadi_id NOT IN (SELECT sayadi_id FROM cheques))) AND pi.id IN (SELECT MAX(id) FROM pasargad_inquiries GROUP BY sayadi_id)) as in_transit_total,
+        (SELECT COALESCE(SUM(pi.bounced_amount), 0) FROM pasargad_inquiries pi WHERE (pi.sayadi_id IN (SELECT sayadi_id FROM cheques WHERE customer_id = c.id) OR (pi.customer_id = c.id AND pi.sayadi_id NOT IN (SELECT sayadi_id FROM cheques))) AND pi.id IN (SELECT MAX(id) FROM pasargad_inquiries GROUP BY sayadi_id)) as bounced_total
     FROM customers c
     WHERE 1=1
     """
@@ -283,10 +283,10 @@ def get_customer_profile(customer_id: int):
         h.full_name as holder_name
     FROM pasargad_inquiries pi
     LEFT JOIN holders h ON pi.holder_id = h.id
-    WHERE pi.customer_id = ?
+    WHERE (pi.customer_id = ? OR pi.sayadi_id IN (SELECT sayadi_id FROM cheques WHERE customer_id = ?))
     ORDER BY pi.id DESC
-    LIMIT 20
-    """, (customer_id,))
+    LIMIT 50
+    """, (customer_id, customer_id))
     inquiries = [dict(row) for row in cursor.fetchall()]
 
     conn.close()
