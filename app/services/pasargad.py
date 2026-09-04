@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Pasargad Bank Inquiry Service with Resilient Cascade Engine, Smart Retry, and Smart Logging
+Pasargad Bank Inquiry Service with Resilient Cascade Engine, Thread-Safe Rate Limiter, and Smart Logging
 """
 import requests
 import urllib3
 import logging
 import json
 import time
+import threading
 from datetime import datetime
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -28,18 +29,54 @@ HEADERS = {
     "Connection": "keep-alive"
 }
 
+# ─────────────────────────────────────────────────────────────
+# 🚦 Thread-Safe Rate Limiter & Anti-Flood Gate for Pasargad API
+# ─────────────────────────────────────────────────────────────
+_BANK_GATE_LOCK = threading.Lock()
+_LAST_REQUEST_TIMESTAMP = 0.0
+_MIN_REQUEST_INTERVAL = 0.55  # Minimum 550ms between any 2 requests to bank
+_GLOBAL_COOLDOWN_UNTIL = 0.0  # Pause all bank traffic across all threads if 429 occurs
+
+def _acquire_bank_turn():
+    """Enforce minimum spacing between calls and handle global 429 cooldown."""
+    global _LAST_REQUEST_TIMESTAMP, _GLOBAL_COOLDOWN_UNTIL
+    with _BANK_GATE_LOCK:
+        now = time.time()
+        if now < _GLOBAL_COOLDOWN_UNTIL:
+            wait_sec = round(_GLOBAL_COOLDOWN_UNTIL - now, 2)
+            smart_logger.log(
+                "WARN", "PASARGAD",
+                f"خنک‌سازی ترافیک درگاه بانک: توقف موقت به مدت {wait_sec} ثانیه...",
+                details={"cooldown_seconds": wait_sec}
+            )
+            time.sleep(wait_sec)
+
+        now = time.time()
+        elapsed = now - _LAST_REQUEST_TIMESTAMP
+        if elapsed < _MIN_REQUEST_INTERVAL:
+            time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
+
+        _LAST_REQUEST_TIMESTAMP = time.time()
+
+def _trigger_global_cooldown(seconds: float = 3.0):
+    """Trigger a global cooldown across all threads when 429 is encountered."""
+    global _GLOBAL_COOLDOWN_UNTIL
+    with _BANK_GATE_LOCK:
+        _GLOBAL_COOLDOWN_UNTIL = max(_GLOBAL_COOLDOWN_UNTIL, time.time() + seconds)
+
+
 def create_pasargad_session():
     session = requests.Session()
     retry_strategy = Retry(
         total=3,
-        backoff_factor=0.4,
-        status_forcelist=[429, 500, 502, 503, 504],
+        backoff_factor=0.6,
+        status_forcelist=[500, 502, 503, 504],
         raise_on_status=False
     )
     adapter = HTTPAdapter(
         max_retries=retry_strategy,
-        pool_connections=30,
-        pool_maxsize=30
+        pool_connections=20,
+        pool_maxsize=20
     )
     session.mount("https://", adapter)
     session.mount("http://", adapter)
@@ -109,11 +146,11 @@ def query_single_holder(
     sayadi_id: str,
     holder_national_id: str,
     id_type: str = "1",
-    timeout: int = 7,
-    retry_count: int = 2
+    timeout: int = 8,
+    retry_count: int = 3
 ) -> dict:
     """
-    Direct query with smart exponential retry and latency breakdown.
+    Direct query with rate limiter, exponential retry, and detailed status breakdown.
     """
     clean_sayadi = str(sayadi_id).strip()
     clean_id_code = str(holder_national_id).strip()
@@ -125,6 +162,7 @@ def query_single_holder(
     }
 
     for attempt in range(1, retry_count + 1):
+        _acquire_bank_turn()
         t_start = time.time()
         try:
             response = GLOBAL_SESSION.get(
@@ -182,26 +220,33 @@ def query_single_holder(
                 }
 
             elif response.status_code == 429:
+                _trigger_global_cooldown(2.5 * attempt)
                 smart_logger.log(
                     "WARN", "PASARGAD",
-                    f"ترافیک بالا (429) - تلاش مجدد مرحله ({attempt}/{retry_count})",
+                    f"ترافیک درگاه بانک (۴۲۹) - استراحت و تلاش مجدد مرحله ({attempt}/{retry_count}) برای {clean_id_code}",
                     sayadi_id=clean_sayadi,
-                    details={"holder": clean_id_code, "status": 429},
+                    details={"holder": clean_id_code, "status": 429, "attempt": attempt},
                     duration_ms=duration_ms
                 )
-                time.sleep(0.5 * attempt)
+                time.sleep(2.0 * attempt)
                 continue
 
             else:
-                human_msg = translate_bank_error(response.status_code, response.text)
-                is_not_in_cartable = (response.status_code == 400 or "cartable" in response.text.lower())
+                raw_txt = response.text
+                human_msg = translate_bank_error(response.status_code, raw_txt)
+                is_not_in_cartable = (
+                    response.status_code == 400 or
+                    "524" in raw_txt or
+                    "cartable" in raw_txt.lower() or
+                    "کارتابل" in raw_txt
+                )
 
                 smart_logger.log(
                     "DEBUG" if is_not_in_cartable else "WARN",
                     "PASARGAD",
                     f"پاسخ بانک: {human_msg} (کدملی {clean_id_code})",
                     sayadi_id=clean_sayadi,
-                    details={"code": response.status_code, "holder": clean_id_code, 'resp': response.text[:200]},
+                    details={"code": response.status_code, "holder": clean_id_code, 'resp': raw_txt[:200]},
                     duration_ms=duration_ms
                 )
 
@@ -210,18 +255,18 @@ def query_single_holder(
                     "sayadi_id": clean_sayadi,
                     "holder_national_id": clean_id_code,
                     "message": human_msg,
-                    "raw_response": response.text
+                    "raw_response": raw_txt
                 }
 
         except Exception as e:
             duration_ms = (time.time() - t_start) * 1000
             if attempt < retry_count:
-                time.sleep(0.4 * attempt)
+                time.sleep(1.0 * attempt)
                 continue
 
             smart_logger.log(
                 "ERROR", "PASARGAD",
-                f"خطای ارتباط با سرور بانک {clean_id_code}: {str(e)}",
+                f"خطای ارتباط با درگاه بانک {clean_id_code}: {str(e)}",
                 sayadi_id=clean_sayadi,
                 details={"error": str(e), "holder": clean_id_code},
                 duration_ms=duration_ms
@@ -231,24 +276,35 @@ def query_single_holder(
                 "status": "error",
                 "sayadi_id": clean_sayadi,
                 "holder_national_id": clean_id_code,
-                "message": f"خطای ارتباط با سرور بانک: {str(e)}",
+                "message": f"خطای ارتباط با درگاه بانک: {str(e)}",
                 "raw_response": ""
             }
 
+    # If loop exited due to repeated 429
     return {
-        "status": "error",
+        "status": "rate_limited",
         "sayadi_id": clean_sayadi,
         "holder_national_id": clean_id_code,
-        "message": "خطایی در فراخوانی اطلاعات بانک",
+        "message": "ترافیک بالای درگاه بانک پاسارگاد (لطفاً چند ثانیه دیگر مجدداً تلاش فرمایید)",
         "raw_response": ""
     }
 
 
 def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, customer_id: int = None, customer_name: str = None) -> dict:
     """
-    Multi-Holder Cascade Inquiry Engine across all 9 predefined holders.
+    Intelligent Multi-Holder Cascade Engine:
+    1. Prioritizes known holder from database or previous successful inquiries.
+    2. Enforces safe interval between queries to prevent 429 rate-limiting.
+    3. Handles 429 with backoff and avoids false 'not in cartable' classification.
     """
     clean_sayadi = str(sayadi_id).strip()
+    if not clean_sayadi or len(clean_sayadi) != 16:
+        return {
+            "status": "error",
+            "sayadi_id": clean_sayadi,
+            "message": f"شناسه صیادی باید ۱۶ رقم باشد (داده شده: {clean_sayadi})"
+        }
+
     smart_logger.log(
         "INFO", "PASARGAD",
         f"شروع استعلام آبشاری بانک پاسارگاد برای شناسه {clean_sayadi}",
@@ -261,17 +317,31 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
 
     cursor.execute("SELECT id, national_id, full_name FROM holders WHERE is_active = 1 ORDER BY id ASC")
     holders = [dict(r) for r in cursor.fetchall()]
+    if not holders:
+        conn.close()
+        return {
+            "status": "error",
+            "sayadi_id": clean_sayadi,
+            "message": "هیچ دارنده فعالی در سیستم تعریف نشده است."
+        }
 
+    # 1. Fetch cheque info
     cursor.execute("SELECT customer_id, cheque_date, holder_id FROM cheques WHERE sayadi_id = ?", (clean_sayadi,))
     ch = cursor.fetchone()
+    cheque_date = ""
     if ch:
         if not customer_id and ch["customer_id"]:
             customer_id = ch["customer_id"]
         if not preferred_holder_id and ch["holder_id"]:
             preferred_holder_id = ch["holder_id"]
         cheque_date = str(ch["cheque_date"] or "")
-    else:
-        cheque_date = ""
+
+    # 2. Check previous successful inquiry for this sayadi_id to reuse holder
+    if not preferred_holder_id:
+        cursor.execute("SELECT holder_id FROM pasargad_inquiries WHERE sayadi_id = ? AND status = 'success' ORDER BY id DESC LIMIT 1", (clean_sayadi,))
+        prev = cursor.fetchone()
+        if prev and prev["holder_id"]:
+            preferred_holder_id = prev["holder_id"]
 
     if customer_id and not customer_name:
         cursor.execute("SELECT full_name FROM customers WHERE id = ?", (customer_id,))
@@ -279,22 +349,32 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
         if cust:
             customer_name = cust["full_name"]
 
+    # Reorder holders so the most likely holder is checked first
     if preferred_holder_id:
         holders.sort(key=lambda h: 0 if h["id"] == preferred_holder_id else 1)
 
     successful_res = None
     matched_holder = None
     last_error_msg = ""
+    had_rate_limit = False
 
-    for h in holders:
+    for idx, h in enumerate(holders):
         res = query_single_holder(clean_sayadi, h["national_id"])
         
         if res["status"] == "success":
             successful_res = res
             matched_holder = h
             break
+        elif res["status"] == "rate_limited":
+            had_rate_limit = True
+            last_error_msg = res.get("message", "")
+            # Stop cascading to avoid bombarding other holders while rate-limited
+            break
         else:
             last_error_msg = res.get("message", "")
+            # Small pacing between holders
+            if idx < len(holders) - 1:
+                time.sleep(0.35)
             continue
 
     if successful_res and matched_holder:
@@ -332,12 +412,21 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
 
         return successful_res
 
+    conn.close()
+
+    # If the process was interrupted by rate limit, report rate_limited (NOT not_in_cartable)
+    if had_rate_limit:
+        return {
+            "status": "rate_limited",
+            "sayadi_id": clean_sayadi,
+            "message": "ترافیک بالای درگاه بانک پاسارگاد – لطفاً کمی بعد مجدداً استعلام بگیرید",
+            "raw_response": last_error_msg
+        }
+
     is_passed = False
     if cheque_date and len(cheque_date) == 8 and cheque_date.isdigit():
         if int(cheque_date) <= 14030607:
             is_passed = True
-
-    conn.close()
 
     if is_passed:
         human_status = "چک در کارتابل هیچ‌یک از ۹ دارنده نیست (احتمالاً پاس شده است - سررسید گذشته)"

@@ -326,25 +326,38 @@ class PasargadEngine {
             customerId: item.customer_id
           });
 
-          this.batchState.processed++;
-          this.batchState.successCount++;
-          this.batchState.inTransitSum += res.in_transit_amount;
-          this.batchState.clearedSum += res.cleared_amount;
-          this.batchState.bouncedSum += res.bounced_amount;
+          if (res.status === 'success') {
+            this.batchState.processed++;
+            this.batchState.successCount++;
+            this.batchState.inTransitSum += (res.in_transit_amount || 0);
+            this.batchState.clearedSum += (res.cleared_amount || 0);
+            this.batchState.bouncedSum += (res.bounced_amount || 0);
 
-          // Slightly reduce dynamic delay on consecutive successes
-          dynamicDelay = Math.max(baseDelay, dynamicDelay - 20);
-
-          results.push({ item, result: res, status: 'success' });
-          onItemComplete(item, res);
+            dynamicDelay = Math.max(baseDelay, dynamicDelay - 20);
+            results.push({ item, result: res, status: 'success' });
+            onItemComplete(item, res);
+          } else if (res.status === 'rate_limited') {
+            this.batchState.processed++;
+            this.batchState.errorCount++;
+            this.batchState.failedItems.push({ item, reason: 'ترافیک بالای درگاه بانک' });
+            dynamicDelay = Math.min(2500, dynamicDelay + 500);
+            window.AppLogger.warn('BATCH', `ترافیک درگاه بانک برای شناسه ${item.sayadi_id}. افزایش تاخیر امن به ${dynamicDelay}ms...`);
+            results.push({ item, result: res, status: 'rate_limited' });
+            onItemComplete(item, res);
+          } else {
+            this.batchState.processed++;
+            this.batchState.errorCount++;
+            this.batchState.failedItems.push({ item, reason: res.message || 'چک در کارتابل یافت نشد' });
+            results.push({ item, result: res, status: res.status || 'not_in_cartable' });
+            onItemComplete(item, res);
+          }
 
         } catch (err) {
           this.batchState.processed++;
           this.batchState.errorCount++;
           this.batchState.failedItems.push({ item, reason: err.message });
           
-          // Adaptive throttling: increase delay on error to give bank server breathing room
-          dynamicDelay = Math.min(1500, dynamicDelay + 250);
+          dynamicDelay = Math.min(2500, dynamicDelay + 300);
           window.AppLogger.warn('BATCH', `خطا در استعلام صیادی ${item.sayadi_id} (${err.message}). افزایش تاخیر امنیتی به ${dynamicDelay}ms...`);
           
           results.push({ item, error: err.message, status: 'error' });

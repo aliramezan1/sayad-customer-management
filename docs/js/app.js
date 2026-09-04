@@ -1341,29 +1341,31 @@ const App = {
           document.getElementById('bulk-stat-bounced').innerText = App.formatMoney(state.bouncedSum);
         },
         onItemComplete: (item, res) => {
-          const inquiryRecord = {
-            id: Date.now() + Math.random(),
-            sayadi_id: item.sayadi_id,
-            holder_id: item.holder_id || defaultHolder.id,
-            customer_id: item.customer_id,
-            inquiry_type: 'pasargad',
-            in_transit_amount: res.in_transit_amount,
-            in_transit_count: res.in_transit_count,
-            cleared_amount: res.cleared_amount,
-            cleared_count: res.cleared_count,
-            bounced_amount: res.bounced_amount,
-            bounced_count: res.bounced_count,
-            inquiry_time: res.inquiry_time || new Date().toISOString(),
-            status: 'success'
-          };
+          if (res && res.status === 'success') {
+            const inquiryRecord = {
+              id: Date.now() + Math.random(),
+              sayadi_id: item.sayadi_id,
+              holder_id: res.holder_id || item.holder_id || defaultHolder.id,
+              customer_id: item.customer_id,
+              inquiry_type: 'pasargad',
+              in_transit_amount: res.in_transit_amount || 0,
+              in_transit_count: res.in_transit_count || 0,
+              cleared_amount: res.cleared_amount || 0,
+              cleared_count: res.cleared_count || 0,
+              bounced_amount: res.bounced_amount || 0,
+              bounced_count: res.bounced_count || 0,
+              inquiry_time: res.inquiry_time || new Date().toISOString(),
+              status: 'success'
+            };
 
-          const existingIdx = App.state.inquiries.findIndex(i => i.sayadi_id === item.sayadi_id);
-          if (existingIdx >= 0) {
-            App.state.inquiries[existingIdx] = inquiryRecord;
-          } else {
-            App.state.inquiries.unshift(inquiryRecord);
+            const existingIdx = App.state.inquiries.findIndex(i => i.sayadi_id === item.sayadi_id);
+            if (existingIdx >= 0) {
+              App.state.inquiries[existingIdx] = inquiryRecord;
+            } else {
+              App.state.inquiries.unshift(inquiryRecord);
+            }
+            App.saveData();
           }
-          App.saveData();
         },
         onFinished: (summary) => {
           document.getElementById('btn-pause-bulk').classList.add('hidden');
@@ -1428,29 +1430,31 @@ const App = {
           document.getElementById('bulk-stat-bounced').innerText = App.formatMoney(state.bouncedSum);
         },
         onItemComplete: (item, res) => {
-          const inquiryRecord = {
-            id: Date.now() + Math.random(),
-            sayadi_id: item.sayadi_id,
-            holder_id: item.holder_id || defaultHolder.id,
-            customer_id: item.customer_id,
-            inquiry_type: 'pasargad',
-            in_transit_amount: res.in_transit_amount,
-            in_transit_count: res.in_transit_count,
-            cleared_amount: res.cleared_amount,
-            cleared_count: res.cleared_count,
-            bounced_amount: res.bounced_amount,
-            bounced_count: res.bounced_count,
-            inquiry_time: res.inquiry_time || new Date().toISOString(),
-            status: 'success'
-          };
+          if (res && res.status === 'success') {
+            const inquiryRecord = {
+              id: Date.now() + Math.random(),
+              sayadi_id: item.sayadi_id,
+              holder_id: res.holder_id || item.holder_id || defaultHolder.id,
+              customer_id: item.customer_id,
+              inquiry_type: 'pasargad',
+              in_transit_amount: res.in_transit_amount || 0,
+              in_transit_count: res.in_transit_count || 0,
+              cleared_amount: res.cleared_amount || 0,
+              cleared_count: res.cleared_count || 0,
+              bounced_amount: res.bounced_amount || 0,
+              bounced_count: res.bounced_count || 0,
+              inquiry_time: res.inquiry_time || new Date().toISOString(),
+              status: 'success'
+            };
 
-          const existingIdx = App.state.inquiries.findIndex(i => i.sayadi_id === item.sayadi_id);
-          if (existingIdx >= 0) {
-            App.state.inquiries[existingIdx] = inquiryRecord;
-          } else {
-            App.state.inquiries.unshift(inquiryRecord);
+            const existingIdx = App.state.inquiries.findIndex(i => i.sayadi_id === item.sayadi_id);
+            if (existingIdx >= 0) {
+              App.state.inquiries[existingIdx] = inquiryRecord;
+            } else {
+              App.state.inquiries.unshift(inquiryRecord);
+            }
+            App.saveData();
           }
-          App.saveData();
         },
         onFinished: (summary) => {
           progressText.innerText = `استعلام مجدد به پایان رسید! (${summary.successCount} مورد بازیابی و با موفقیت ثبت شد)`;

@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from app.database import get_db
 from app.services.pasargad import record_pasargad_inquiry
+from app.services.smart_logger import smart_logger
 
 logger = logging.getLogger("app.services.scheduler")
 
@@ -31,28 +32,37 @@ class DailyScheduler:
 
     def _run_loop(self):
         """Main loop: checks periodically if daily execution is due."""
+        # Initial gentle pause after startup before checking schedules
+        time.sleep(45)
+        
         while self.is_running:
-            now = datetime.now()
-            # Run daily at 08:30 AM or if never run before today
-            today_str = now.strftime("%Y-%m-%d")
-            
-            # Check if run already recorded for today
-            conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM scheduler_logs WHERE run_time LIKE ? AND status = 'success'", (f"{today_str}%",))
-            already_ran = cursor.fetchone()[0] > 0
-            conn.close()
+            try:
+                now = datetime.now()
+                today_str = now.strftime("%Y-%m-%d")
+                
+                # Check if run already recorded for today (any status)
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM scheduler_logs WHERE run_time LIKE ?", (f"{today_str}%",))
+                already_ran = cursor.fetchone()[0] > 0
+                conn.close()
 
-            # If it is past 8 AM and hasn't run today, execute
-            if now.hour >= 8 and not already_ran:
-                logger.info(f"Triggering scheduled daily inquiry for {today_str}...")
-                self.run_batch_inquiry()
+                # Run daily at 08:30 AM once per day
+                if now.hour == 8 and now.minute >= 30 and not already_ran:
+                    smart_logger.log("INFO", "SCHEDULER", f"آغاز زمان‌بندی روزانه استعلامات برای تاریخ {today_str}...")
+                    self.run_batch_inquiry()
+
+            except Exception as ex:
+                logger.error(f"Scheduler loop error: {ex}")
 
             # Sleep 10 minutes between checks
             time.sleep(600)
 
     def run_batch_inquiry(self, default_holder_id: int = 1) -> dict:
-        """Run batch inquiry for all cheques in database."""
+        """Run batch inquiry for all cheques in database with safe pacing."""
+        if self.status == "running":
+            return {"status": "busy", "message": "زمان‌بند در حال حاضر در حال اجراست"}
+            
         self.status = "running"
         start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.last_run = start_time
@@ -60,11 +70,11 @@ class DailyScheduler:
         conn = get_db()
         cursor = conn.cursor()
 
-        # Get all distinct cheques with valid sayadi IDs
+        # Get all distinct cheques with valid 16-digit sayadi IDs
         cursor.execute("""
         SELECT DISTINCT c.sayadi_id, COALESCE(c.holder_id, ?) as holder_id, c.customer_id
         FROM cheques c
-        WHERE c.sayadi_id IS NOT NULL AND length(c.sayadi_id) = 16
+        WHERE c.sayadi_id IS NOT NULL AND length(trim(c.sayadi_id)) = 16
         """, (default_holder_id,))
         cheques_to_query = cursor.fetchall()
         
@@ -72,22 +82,25 @@ class DailyScheduler:
         error_count = 0
         
         for ch in cheques_to_query:
+            if not self.is_running:
+                break
+
             sayadi_id = ch["sayadi_id"]
             holder_id = ch["holder_id"]
             cust_id = ch["customer_id"]
 
             try:
                 res = record_pasargad_inquiry(sayadi_id, holder_id, cust_id)
-                if res["status"] == "success":
+                if res.get("status") == "success":
                     success_count += 1
                 else:
                     error_count += 1
             except Exception as e:
-                logger.error(f"Error inquiring {sayadi_id}: {e}")
+                logger.error(f"Scheduler inquiry error for {sayadi_id}: {e}")
                 error_count += 1
             
-            # Small delay to be polite to the server
-            time.sleep(1.0)
+            # Safe pacing between cheques (1.5 seconds)
+            time.sleep(1.5)
 
         total_processed = success_count + error_count
         status_str = "success" if error_count == 0 else ("partial" if success_count > 0 else "error")
@@ -105,27 +118,26 @@ class DailyScheduler:
         conn.close()
 
         self.status = "idle"
+        smart_logger.log(
+            "SUCCESS" if status_str == "success" else "INFO",
+            "SCHEDULER",
+            f"پایان استعلام زمان‌بندی‌شده روزانه. موفق: {success_count} | خطا: {error_count}",
+            details={"success": success_count, "error": error_count, "total": total_processed}
+        )
         return {
             "status": status_str,
             "success_count": success_count,
             "error_count": error_count,
             "total_processed": total_processed,
-            "run_time": start_time
+            "start_time": start_time,
+            "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
-    def get_status(self) -> dict:
-        """Get current scheduler status and recent logs."""
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM scheduler_logs ORDER BY id DESC LIMIT 10")
-        logs = [dict(row) for row in cursor.fetchall()]
-        conn.close()
-
-        return {
-            "is_running": self.is_running,
-            "current_status": self.status,
-            "last_run": self.last_run,
-            "recent_logs": logs
-        }
+    def stop(self):
+        """Stop the background scheduler."""
+        self.is_running = False
+        self.status = "stopped"
+        logger.info("Daily scheduler stopped.")
 
 scheduler_instance = DailyScheduler()
+scheduler_service = scheduler_instance
