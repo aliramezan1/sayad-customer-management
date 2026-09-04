@@ -15,12 +15,21 @@ const App = {
     colorFilter: 'all',
     selectedCustomer: null,
     charts: {},
-    logFilter: 'ALL'
+    logFilter: 'ALL',
+    bulkDrilldown: {
+      activeTab: 'failed',
+      searchQuery: '',
+      retryingId: null,
+      expandedDiagnostics: new Set(),
+      lastRenderTime: 0
+    },
+    lastBatchResults: null
   },
 
   async init() {
     window.AppLogger.info('SYSTEM', 'در حال راه‌اندازی سامانه صیاد پرو وب...');
     await this.loadData();
+    this.restoreLastBatchResults();
     this.populateHolderDropdowns();
     this.renderHoldersList();
     this.setupEventListeners();
@@ -127,7 +136,34 @@ const App = {
         window.AppLogger.success('SYSTEM', `دیتاست جامع با ${this.state.customers.length} مشتری، ${this.state.cheques.length} چک و ${this.state.inquiries.length} سابقه استعلام بارگذاری شد.`);
       }
     } catch (e) {
-      window.AppLogger.error('SYSTEM', 'خطا در واکشی دیتاست اولیه', e);
+      window.AppLogger.error('SYSTEM', 'خطا در بارگذاری دیتاست اولیه', e);
+    }
+  },
+
+  restoreLastBatchResults() {
+    try {
+      const savedBatch = localStorage.getItem('sayad_last_batch_results');
+      if (savedBatch) {
+        this.state.lastBatchResults = JSON.parse(savedBatch);
+        if (window.PasargadInquiryEngine && (!window.PasargadInquiryEngine.batchState.processed || window.PasargadInquiryEngine.batchState.processed === 0)) {
+          window.PasargadInquiryEngine.batchState = {
+            isRunning: false,
+            isPaused: false,
+            isCancelled: false,
+            total: this.state.lastBatchResults.total || 0,
+            processed: this.state.lastBatchResults.processed || 0,
+            successCount: this.state.lastBatchResults.successCount || 0,
+            errorCount: this.state.lastBatchResults.errorCount || 0,
+            inTransitSum: this.state.lastBatchResults.inTransitSum || 0,
+            clearedSum: this.state.lastBatchResults.clearedSum || 0,
+            bouncedSum: this.state.lastBatchResults.bouncedSum || 0,
+            failedItems: this.state.lastBatchResults.failedItems || [],
+            successItems: this.state.lastBatchResults.successItems || []
+          };
+        }
+      }
+    } catch (e) {
+      console.error('Error restoring last batch results:', e);
     }
   },
 
@@ -1352,16 +1388,97 @@ const App = {
   openBulkInquiryModal() {
     const modal = document.getElementById('bulk-inquiry-modal');
     document.getElementById('bulk-total-count').innerText = this.state.cheques.length.toLocaleString('fa-IR');
-    document.getElementById('bulk-progress-bar').style.width = '0%';
-    document.getElementById('bulk-progress-percent').innerText = '۰٪';
-    document.getElementById('bulk-progress-text').innerText = 'آماده شروع استعلام...';
-    document.getElementById('bulk-stat-success').innerText = '۰';
-    document.getElementById('bulk-stat-error').innerText = '۰';
-    document.getElementById('bulk-stat-in-transit').innerText = '۰';
-    document.getElementById('bulk-stat-bounced').innerText = '۰';
-    document.getElementById('btn-start-bulk').classList.remove('hidden');
-    document.getElementById('btn-pause-bulk').classList.add('hidden');
-    document.getElementById('btn-resume-bulk').classList.add('hidden');
+
+    const bs = window.PasargadInquiryEngine.batchState;
+    const lastBatch = this.state.lastBatchResults;
+
+    if (bs && bs.isRunning) {
+      // Currently running: keep progress and buttons
+      document.getElementById('btn-start-bulk').classList.add('hidden');
+      document.getElementById('btn-pause-bulk').classList.toggle('hidden', bs.isPaused);
+      document.getElementById('btn-resume-bulk').classList.toggle('hidden', !bs.isPaused);
+    } else if (bs && (bs.processed > 0 || (bs.successCount + bs.errorCount > 0))) {
+      // Completed or previous batch available
+      const pct = Math.round((bs.processed / (bs.total || 1)) * 100) || 0;
+      document.getElementById('bulk-progress-bar').style.width = `${pct}%`;
+      document.getElementById('bulk-progress-percent').innerText = `${pct.toLocaleString('fa-IR')}٪`;
+      document.getElementById('bulk-progress-text').innerText = bs.errorCount > 0 
+        ? `استعلام قبلی: ${bs.successCount.toLocaleString('fa-IR')} موفق و ${bs.errorCount.toLocaleString('fa-IR')} ناموفق. برای اجرای مجدد روی شروع کلیک کنید.`
+        : `استعلام با موفقیت ۱۰۰٪ پایان یافته است (${bs.successCount.toLocaleString('fa-IR')} موفق).`;
+      document.getElementById('bulk-stat-success').innerText = bs.successCount.toLocaleString('fa-IR');
+      document.getElementById('bulk-stat-error').innerText = bs.errorCount.toLocaleString('fa-IR');
+      const subSuc = document.getElementById('bulk-stat-success-sub');
+      if (subSuc) subSuc.innerText = `(${bs.successCount.toLocaleString('fa-IR')})`;
+      const subErr = document.getElementById('bulk-stat-error-sub');
+      if (subErr) subErr.innerText = `(${bs.errorCount.toLocaleString('fa-IR')})`;
+      document.getElementById('bulk-stat-in-transit').innerText = this.formatMoney(bs.inTransitSum);
+      document.getElementById('bulk-stat-bounced').innerText = this.formatMoney(bs.bouncedSum);
+
+      const retryBox = document.getElementById('bulk-retry-prompt-box');
+      if (retryBox) {
+        if (bs.errorCount > 0 && bs.failedItems && bs.failedItems.length > 0) {
+          retryBox.classList.remove('hidden');
+          const fc = document.getElementById('bulk-failed-count-display');
+          if (fc) fc.innerText = bs.errorCount.toLocaleString('fa-IR');
+        } else {
+          retryBox.classList.add('hidden');
+        }
+      }
+
+      document.getElementById('btn-start-bulk').classList.remove('hidden');
+      document.getElementById('btn-pause-bulk').classList.add('hidden');
+      document.getElementById('btn-resume-bulk').classList.add('hidden');
+    } else if (lastBatch) {
+      // Restored from lastBatch storage
+      const sCount = lastBatch.successCount || (lastBatch.successItems ? lastBatch.successItems.length : 0);
+      const eCount = lastBatch.errorCount || (lastBatch.failedItems ? lastBatch.failedItems.length : 0);
+      document.getElementById('bulk-stat-success').innerText = sCount.toLocaleString('fa-IR');
+      document.getElementById('bulk-stat-error').innerText = eCount.toLocaleString('fa-IR');
+      const subSuc = document.getElementById('bulk-stat-success-sub');
+      if (subSuc) subSuc.innerText = `(${sCount.toLocaleString('fa-IR')})`;
+      const subErr = document.getElementById('bulk-stat-error-sub');
+      if (subErr) subErr.innerText = `(${eCount.toLocaleString('fa-IR')})`;
+      document.getElementById('bulk-stat-in-transit').innerText = this.formatMoney(lastBatch.inTransitSum || 0);
+      document.getElementById('bulk-stat-bounced').innerText = this.formatMoney(lastBatch.bouncedSum || 0);
+      document.getElementById('bulk-progress-bar').style.width = '100%';
+      document.getElementById('bulk-progress-percent').innerText = '۱۰۰٪';
+      document.getElementById('bulk-progress-text').innerText = eCount > 0
+        ? `گزارش آخرین استعلام: ${sCount.toLocaleString('fa-IR')} موفق، ${eCount.toLocaleString('fa-IR')} ناموفق`
+        : `گزارش آخرین استعلام (موفقیت ۱۰۰٪)`;
+
+      const retryBox = document.getElementById('bulk-retry-prompt-box');
+      if (retryBox) {
+        if (eCount > 0 && lastBatch.failedItems && lastBatch.failedItems.length > 0) {
+          retryBox.classList.remove('hidden');
+          const fc = document.getElementById('bulk-failed-count-display');
+          if (fc) fc.innerText = eCount.toLocaleString('fa-IR');
+        } else {
+          retryBox.classList.add('hidden');
+        }
+      }
+
+      document.getElementById('btn-start-bulk').classList.remove('hidden');
+      document.getElementById('btn-pause-bulk').classList.add('hidden');
+      document.getElementById('btn-resume-bulk').classList.add('hidden');
+    } else {
+      // Fresh initial state
+      document.getElementById('bulk-progress-bar').style.width = '0%';
+      document.getElementById('bulk-progress-percent').innerText = '۰٪';
+      document.getElementById('bulk-progress-text').innerText = 'آماده شروع استعلام...';
+      document.getElementById('bulk-stat-success').innerText = '۰';
+      document.getElementById('bulk-stat-error').innerText = '۰';
+      const subSuc = document.getElementById('bulk-stat-success-sub');
+      if (subSuc) subSuc.innerText = '';
+      const subErr = document.getElementById('bulk-stat-error-sub');
+      if (subErr) subErr.innerText = '';
+      document.getElementById('bulk-stat-in-transit').innerText = '۰';
+      document.getElementById('bulk-stat-bounced').innerText = '۰';
+      document.getElementById('btn-start-bulk').classList.remove('hidden');
+      document.getElementById('btn-pause-bulk').classList.add('hidden');
+      document.getElementById('btn-resume-bulk').classList.add('hidden');
+      const retryBox = document.getElementById('bulk-retry-prompt-box');
+      if (retryBox) retryBox.classList.add('hidden');
+    }
 
     this.populateHolderDropdowns();
     modal.classList.remove('hidden');
@@ -1402,7 +1519,7 @@ const App = {
       },
       {
         onProgress: (state) => {
-          const pct = Math.round((state.processed / state.total) * 100) || 0;
+          const pct = Math.round((state.processed / (state.total || 1)) * 100) || 0;
           progressBar.style.width = `${pct}%`;
           progressPercent.innerText = `${pct.toLocaleString('fa-IR')}٪`;
           progressText.innerText = `در حال بررسی چک ${state.processed.toLocaleString('fa-IR')} از ${state.total.toLocaleString('fa-IR')}...`;
@@ -1414,8 +1531,21 @@ const App = {
 
           document.getElementById('bulk-stat-success').innerText = state.successCount.toLocaleString('fa-IR');
           document.getElementById('bulk-stat-error').innerText = state.errorCount.toLocaleString('fa-IR');
+          const subSuc = document.getElementById('bulk-stat-success-sub');
+          if (subSuc) subSuc.innerText = `(${state.successCount.toLocaleString('fa-IR')})`;
+          const subErr = document.getElementById('bulk-stat-error-sub');
+          if (subErr) subErr.innerText = `(${state.errorCount.toLocaleString('fa-IR')})`;
           document.getElementById('bulk-stat-in-transit').innerText = App.formatMoney(state.inTransitSum);
           document.getElementById('bulk-stat-bounced').innerText = App.formatMoney(state.bouncedSum);
+
+          if (App.isBulkDrilldownOpen()) {
+            const now = Date.now();
+            if (now - (App.state.bulkDrilldown.lastRenderTime || 0) > 400) {
+              App.state.bulkDrilldown.lastRenderTime = now;
+              App.updateBulkDrilldownTabUI();
+              App.renderBulkDrilldownList();
+            }
+          }
         },
         onItemComplete: (item, res) => {
           if (res && res.status === 'success') {
@@ -1447,18 +1577,35 @@ const App = {
         onFinished: (summary) => {
           document.getElementById('btn-pause-bulk').classList.add('hidden');
           document.getElementById('btn-resume-bulk').classList.add('hidden');
+          document.getElementById('btn-start-bulk').classList.remove('hidden');
 
           const pipSub = document.getElementById('pip-progress-sub');
           if (pipSub) pipSub.innerText = `استعلام پایان یافت (${summary.successCount} موفق)`;
 
+          App.state.lastBatchResults = {
+            successItems: [...(window.PasargadInquiryEngine.batchState.successItems || [])],
+            failedItems: [...(window.PasargadInquiryEngine.batchState.failedItems || [])],
+            total: window.PasargadInquiryEngine.batchState.total,
+            processed: window.PasargadInquiryEngine.batchState.processed,
+            successCount: summary.successCount,
+            errorCount: summary.errorCount,
+            inTransitSum: summary.inTransitSum,
+            clearedSum: summary.clearedSum,
+            bouncedSum: summary.bouncedSum,
+            timestamp: new Date().toISOString()
+          };
+          try {
+            localStorage.setItem('sayad_last_batch_results', JSON.stringify(App.state.lastBatchResults));
+          } catch (e) {}
+
           if (summary.errorCount > 0 && summary.failedItems && summary.failedItems.length > 0) {
-            progressText.innerHTML = `<span class="text-amber-400 font-bold">پایان مرحله اول: ${summary.successCount} موفق | ${summary.errorCount} ناموفق (ترافیک بانک)</span>`;
+            progressText.innerHTML = `<span class="text-amber-400 font-bold">پایان استعلام: ${summary.successCount} موفق | ${summary.errorCount} ناموفق</span>`;
             const retryBox = document.getElementById('bulk-retry-prompt-box');
             if (retryBox) {
               retryBox.classList.remove('hidden');
               document.getElementById('bulk-failed-count-display').innerText = summary.errorCount.toLocaleString('fa-IR');
             }
-            App.showToast(`استعلام پایان یافت. ${summary.errorCount} مورد نیاز به بازتلاش امن دارند.`, 'warn');
+            App.showToast(`استعلام پایان یافت. ${summary.errorCount} مورد ناموفق نیاز به بازتلاش دارند.`, 'warn');
           } else {
             progressText.innerText = `عملیات استعلام با موفقیت ۱۰۰٪ به پایان رسید! (${summary.successCount} موفق)`;
             const retryBox = document.getElementById('bulk-retry-prompt-box');
@@ -1466,6 +1613,10 @@ const App = {
             App.showToast('استعلام دسته‌جمعی سبد مشتریان با موفقیت ۱۰۰٪ انجام شد.', 'success');
           }
 
+          if (App.isBulkDrilldownOpen()) {
+            App.updateBulkDrilldownTabUI();
+            App.renderBulkDrilldownList();
+          }
           App.renderCurrentView();
         }
       }
@@ -1485,13 +1636,15 @@ const App = {
     const progressPercent = document.getElementById('bulk-progress-percent');
     const progressText = document.getElementById('bulk-progress-text');
 
+    const initialSuccessCount = window.PasargadInquiryEngine.batchState.successCount || 0;
+
     progressText.innerText = 'در حال استعلام مجدد موارد ناموفق با سرعت بهینه و ضد بلاک...';
 
     await window.PasargadInquiryEngine.runRetryFailed(
       holderMap,
       {
         onProgress: (state) => {
-          const pct = Math.round((state.processed / state.total) * 100) || 0;
+          const pct = Math.round((state.processed / (state.total || 1)) * 100) || 0;
           progressBar.style.width = `${pct}%`;
           progressPercent.innerText = `${pct.toLocaleString('fa-IR')}٪`;
           progressText.innerText = `در حال بررسی امن چک ${state.processed.toLocaleString('fa-IR')} از ${state.total.toLocaleString('fa-IR')}...`;
@@ -1501,10 +1654,23 @@ const App = {
           if (pipPct) pipPct.innerText = `${pct.toLocaleString('fa-IR')}٪`;
           if (pipSub) pipSub.innerText = `استعلام مجدد: ${state.processed.toLocaleString('fa-IR')} از ${state.total.toLocaleString('fa-IR')}`;
 
-          document.getElementById('bulk-stat-success').innerText = (parseInt(document.getElementById('bulk-stat-success').innerText) + state.successCount).toLocaleString('fa-IR');
+          document.getElementById('bulk-stat-success').innerText = state.successCount.toLocaleString('fa-IR');
           document.getElementById('bulk-stat-error').innerText = state.errorCount.toLocaleString('fa-IR');
+          const subSuc = document.getElementById('bulk-stat-success-sub');
+          if (subSuc) subSuc.innerText = `(${state.successCount.toLocaleString('fa-IR')})`;
+          const subErr = document.getElementById('bulk-stat-error-sub');
+          if (subErr) subErr.innerText = `(${state.errorCount.toLocaleString('fa-IR')})`;
           document.getElementById('bulk-stat-in-transit').innerText = App.formatMoney(state.inTransitSum);
           document.getElementById('bulk-stat-bounced').innerText = App.formatMoney(state.bouncedSum);
+
+          if (App.isBulkDrilldownOpen()) {
+            const now = Date.now();
+            if (now - (App.state.bulkDrilldown.lastRenderTime || 0) > 400) {
+              App.state.bulkDrilldown.lastRenderTime = now;
+              App.updateBulkDrilldownTabUI();
+              App.renderBulkDrilldownList();
+            }
+          }
         },
         onItemComplete: (item, res) => {
           if (res && res.status === 'success') {
@@ -1534,16 +1700,54 @@ const App = {
           }
         },
         onFinished: (summary) => {
-          progressText.innerText = `استعلام مجدد به پایان رسید! (${summary.successCount} مورد بازیابی و با موفقیت ثبت شد)`;
+          const recoveredCount = summary.successCount - initialSuccessCount;
+          const remainingFailed = summary.errorCount;
+
+          App.state.lastBatchResults = {
+            successItems: [...(window.PasargadInquiryEngine.batchState.successItems || [])],
+            failedItems: [...(window.PasargadInquiryEngine.batchState.failedItems || [])],
+            total: window.PasargadInquiryEngine.batchState.total,
+            processed: window.PasargadInquiryEngine.batchState.processed,
+            successCount: summary.successCount,
+            errorCount: summary.errorCount,
+            inTransitSum: summary.inTransitSum,
+            clearedSum: summary.clearedSum,
+            bouncedSum: summary.bouncedSum,
+            timestamp: new Date().toISOString()
+          };
+          try {
+            localStorage.setItem('sayad_last_batch_results', JSON.stringify(App.state.lastBatchResults));
+          } catch (e) {}
+
           const pipSub = document.getElementById('pip-progress-sub');
-          if (pipSub) pipSub.innerText = `استعلام مجدد به پایان رسید (${summary.successCount} موفق)`;
-          App.showToast('موارد ناموفق با موفقیت استعلام شدند.', 'success');
+
+          if (remainingFailed === 0) {
+            progressText.innerText = `استعلام مجدد پایان یافت. تمام ${recoveredCount.toLocaleString('fa-IR')} مورد با موفقیت بازیابی شدند (موفقیت ۱۰۰٪).`;
+            if (pipSub) pipSub.innerText = `استعلام مجدد: ۱۰۰٪ موفق (${summary.successCount})`;
+            App.showToast(`تمام موارد ناموفق (${recoveredCount} فقره) با موفقیت استعلام شدند.`, 'success');
+            const rBox = document.getElementById('bulk-retry-prompt-box');
+            if (rBox) rBox.classList.add('hidden');
+          } else {
+            progressText.innerHTML = `<span class="text-amber-400 font-bold">استعلام مجدد پایان یافت: ${recoveredCount.toLocaleString('fa-IR')} مورد بازیابی شد | ${remainingFailed.toLocaleString('fa-IR')} مورد همچنان ناموفق</span>`;
+            if (pipSub) pipSub.innerText = `استعلام مجدد: ${recoveredCount} بازیابی شد، ${remainingFailed} ناموفق`;
+            App.showToast(`${recoveredCount} فقره با موفقیت بازیابی شد. ${remainingFailed} فقره همچنان ناموفق ماند.`, 'warn');
+            const rBox = document.getElementById('bulk-retry-prompt-box');
+            if (rBox) {
+              rBox.classList.remove('hidden');
+              const fc = document.getElementById('bulk-failed-count-display');
+              if (fc) fc.innerText = remainingFailed.toLocaleString('fa-IR');
+            }
+          }
+
+          if (App.isBulkDrilldownOpen()) {
+            App.updateBulkDrilldownTabUI();
+            App.renderBulkDrilldownList();
+          }
           App.renderCurrentView();
         }
       }
     );
   },
-
 
   pauseBulkInquiry() {
     window.PasargadInquiryEngine.pauseBatch();
@@ -1556,6 +1760,866 @@ const App = {
     window.PasargadInquiryEngine.resumeBatch();
     document.getElementById('btn-resume-bulk').classList.add('hidden');
     document.getElementById('btn-pause-bulk').classList.remove('hidden');
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // 🔍 Bulk Inquiry Drill-Down & Failure Diagnostics Controller
+  // ─────────────────────────────────────────────────────────────
+  isBulkDrilldownOpen() {
+    const modal = document.getElementById('bulk-drilldown-modal');
+    return modal && !modal.classList.contains('hidden');
+  },
+
+  openBulkDrilldown(initialTab = null) {
+    const batchState = window.PasargadInquiryEngine.batchState;
+    const failedItems = (batchState && batchState.failedItems) || (this.state.lastBatchResults && this.state.lastBatchResults.failedItems) || [];
+    const successItems = (batchState && batchState.successItems) || (this.state.lastBatchResults && this.state.lastBatchResults.successItems) || [];
+
+    if (initialTab) {
+      this.state.bulkDrilldown.activeTab = initialTab;
+    } else {
+      // Smart default tab selection
+      if (failedItems.length > 0) {
+        this.state.bulkDrilldown.activeTab = 'failed';
+      } else if (successItems.length > 0) {
+        this.state.bulkDrilldown.activeTab = 'success';
+      } else {
+        this.state.bulkDrilldown.activeTab = 'all';
+      }
+    }
+
+    const modal = document.getElementById('bulk-drilldown-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    this.updateBulkDrilldownTabUI();
+    this.renderBulkDrilldownList();
+    if (window.lucide) lucide.createIcons();
+  },
+
+  closeBulkDrilldownModal() {
+    const modal = document.getElementById('bulk-drilldown-modal');
+    if (modal) modal.classList.add('hidden');
+  },
+
+  setBulkDrilldownTab(tab) {
+    this.state.bulkDrilldown.activeTab = tab;
+    this.updateBulkDrilldownTabUI();
+    this.renderBulkDrilldownList();
+    if (window.lucide) lucide.createIcons();
+  },
+
+  updateBulkDrilldownTabUI() {
+    const tab = this.state.bulkDrilldown.activeTab;
+    const btnFailed = document.getElementById('drilldown-tab-failed');
+    const btnSuccess = document.getElementById('drilldown-tab-success');
+    const btnAll = document.getElementById('drilldown-tab-all');
+    const btnRetryAll = document.getElementById('drilldown-btn-retry-all');
+
+    if (btnFailed) {
+      btnFailed.className = tab === 'failed'
+        ? 'px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-rose-600 text-white shadow'
+        : 'px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white';
+    }
+    if (btnSuccess) {
+      btnSuccess.className = tab === 'success'
+        ? 'px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-emerald-600 text-white shadow'
+        : 'px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white';
+    }
+    if (btnAll) {
+      btnAll.className = tab === 'all'
+        ? 'px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-sky-600 text-white shadow'
+        : 'px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white';
+    }
+
+    const batchState = window.PasargadInquiryEngine.batchState;
+    const failedList = (batchState && batchState.failedItems) || (this.state.lastBatchResults && this.state.lastBatchResults.failedItems) || [];
+    if (btnRetryAll) {
+      if (failedList.length > 0 && tab !== 'success') {
+        btnRetryAll.classList.remove('hidden');
+      } else {
+        btnRetryAll.classList.add('hidden');
+      }
+    }
+
+    // Update status badge
+    const badgeEl = document.getElementById('drilldown-status-badge');
+    if (badgeEl) {
+      if (batchState && batchState.isRunning) {
+        badgeEl.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-sky-500/20 text-sky-400 border border-sky-500/30 inline-flex items-center gap-1.5';
+        badgeEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping"></span><span>در حال پردازش (${batchState.processed.toLocaleString('fa-IR')} از ${batchState.total.toLocaleString('fa-IR')})</span>`;
+      } else if (failedList.length > 0) {
+        badgeEl.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        badgeEl.innerText = `${failedList.length.toLocaleString('fa-IR')} مورد ناموفق`;
+      } else if ((batchState && batchState.successCount > 0) || (this.state.lastBatchResults && this.state.lastBatchResults.successCount > 0)) {
+        badgeEl.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        badgeEl.innerText = 'استعلام موفق (۱۰۰٪)';
+      } else {
+        badgeEl.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700';
+        badgeEl.innerText = 'آماده';
+      }
+    }
+  },
+
+  filterBulkDrilldown(query) {
+    this.state.bulkDrilldown.searchQuery = (query || '').trim().toLowerCase();
+    this.renderBulkDrilldownList();
+    if (window.lucide) lucide.createIcons();
+  },
+
+  toggleDiagnosticDetail(sayadiId) {
+    const cleanId = String(sayadiId).trim();
+    if (this.state.bulkDrilldown.expandedDiagnostics.has(cleanId)) {
+      this.state.bulkDrilldown.expandedDiagnostics.delete(cleanId);
+    } else {
+      this.state.bulkDrilldown.expandedDiagnostics.add(cleanId);
+    }
+    const el = document.getElementById(`diag-${cleanId}`);
+    if (el) {
+      el.classList.toggle('hidden', !this.state.bulkDrilldown.expandedDiagnostics.has(cleanId));
+    }
+  },
+
+  async retrySingleDrilldownCheque(sayadiId) {
+    if (window.PasargadInquiryEngine.batchState && window.PasargadInquiryEngine.batchState.isRunning) {
+      this.showToast('یک استعلام گروهی هم‌اکنون در حال اجراست. لطفاً تا پایان آن صبر کنید.', 'warn');
+      return;
+    }
+
+    if (this.state.bulkDrilldown.retryingId) {
+      this.showToast('یک استعلام تک‌موردی هم‌اکنون در حال اجراست. لطفاً چند لحظه صبر کنید.', 'info');
+      return;
+    }
+
+    const cleanId = String(sayadiId).trim();
+    this.state.bulkDrilldown.retryingId = cleanId;
+
+    const btn = document.getElementById(`btn-retry-${cleanId}`);
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="refresh-cw" class="w-3 h-3 animate-spin"></i><span>در حال بررسی...</span>`;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    let cheque = this.state.cheques.find(c => String(c.sayadi_id).trim() === cleanId);
+    if (!cheque) {
+      const bs = window.PasargadInquiryEngine.batchState;
+      const fItem = (bs.failedItems || []).find(f => String(f.item.sayadi_id).trim() === cleanId);
+      if (fItem) cheque = fItem.item;
+    }
+
+    if (!cheque) {
+      this.showToast('اطلاعات این فقره چک در سیستم یافت نشد.', 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="refresh-cw" class="w-3 h-3"></i><span>تلاش مجدد</span>`;
+        if (window.lucide) lucide.createIcons();
+      }
+      this.state.bulkDrilldown.retryingId = null;
+      return;
+    }
+
+    const bulkSelect = document.getElementById('bulk-holder-select');
+    const holderId = bulkSelect ? parseInt(bulkSelect.value) : null;
+    const defaultHolder = (holderId && this.state.holders.find(h => h.id === holderId)) || this.state.holders[0];
+    const holderMap = {};
+    this.state.holders.forEach(h => { holderMap[h.id] = h; });
+
+    try {
+      const res = await window.PasargadInquiryEngine.retrySingleCheque(cheque, holderMap, { defaultHolder });
+
+      const bs = window.PasargadInquiryEngine.batchState;
+
+      if (res.status === 'success') {
+        if (res.result && res.result.holder_id) {
+          cheque.holder_id = res.result.holder_id;
+        }
+        cheque.updated_at = new Date().toISOString();
+
+        const inquiryRecord = {
+          id: Date.now() + Math.random(),
+          sayadi_id: cheque.sayadi_id,
+          holder_id: res.result.holder_id || cheque.holder_id || defaultHolder.id,
+          customer_id: cheque.customer_id,
+          inquiry_type: 'pasargad',
+          in_transit_amount: res.result.in_transit_amount || 0,
+          in_transit_count: res.result.in_transit_count || 0,
+          cleared_amount: res.result.cleared_amount || 0,
+          cleared_count: res.result.cleared_count || 0,
+          bounced_amount: res.result.bounced_amount || 0,
+          bounced_count: res.result.bounced_count || 0,
+          inquiry_time: res.result.inquiry_time || new Date().toISOString(),
+          status: 'success'
+        };
+
+        const existingIdx = this.state.inquiries.findIndex(i => String(i.sayadi_id).trim() === cleanId);
+        if (existingIdx >= 0) {
+          this.state.inquiries[existingIdx] = inquiryRecord;
+        } else {
+          this.state.inquiries.unshift(inquiryRecord);
+        }
+        this.saveData();
+
+        // Sync lastBatchResults
+        this.state.lastBatchResults = {
+          successItems: [...(bs.successItems || [])],
+          failedItems: [...(bs.failedItems || [])],
+          total: bs.total,
+          processed: bs.processed,
+          successCount: bs.successCount,
+          errorCount: bs.errorCount,
+          inTransitSum: bs.inTransitSum,
+          clearedSum: bs.clearedSum,
+          bouncedSum: bs.bouncedSum,
+          timestamp: new Date().toISOString()
+        };
+        try {
+          localStorage.setItem('sayad_last_batch_results', JSON.stringify(this.state.lastBatchResults));
+        } catch (e) {}
+
+        // Update bulk modal counters
+        const sEl = document.getElementById('bulk-stat-success');
+        if (sEl) sEl.innerText = bs.successCount.toLocaleString('fa-IR');
+        const eEl = document.getElementById('bulk-stat-error');
+        if (eEl) eEl.innerText = bs.errorCount.toLocaleString('fa-IR');
+        const subSuc = document.getElementById('bulk-stat-success-sub');
+        if (subSuc) subSuc.innerText = `(${bs.successCount.toLocaleString('fa-IR')})`;
+        const subErr = document.getElementById('bulk-stat-error-sub');
+        if (subErr) subErr.innerText = `(${bs.errorCount.toLocaleString('fa-IR')})`;
+        const inTransitEl = document.getElementById('bulk-stat-in-transit');
+        if (inTransitEl) inTransitEl.innerText = this.formatMoney(bs.inTransitSum);
+        const bouncedEl = document.getElementById('bulk-stat-bounced');
+        if (bouncedEl) bouncedEl.innerText = this.formatMoney(bs.bouncedSum);
+
+        const retryBox = document.getElementById('bulk-retry-prompt-box');
+        if (retryBox) {
+          if (bs.errorCount <= 0) {
+            retryBox.classList.add('hidden');
+          } else {
+            const fc = document.getElementById('bulk-failed-count-display');
+            if (fc) fc.innerText = bs.errorCount.toLocaleString('fa-IR');
+          }
+        }
+
+        this.showToast(`استعلام صیادی ${cheque.sayadi_id} با موفقیت دریافت و ثبت شد.`, 'success');
+        this.updateBulkDrilldownTabUI();
+        this.renderBulkDrilldownList();
+        this.renderCurrentView();
+      } else {
+        // Sync lastBatchResults on failure update
+        this.state.lastBatchResults = {
+          successItems: [...(bs.successItems || [])],
+          failedItems: [...(bs.failedItems || [])],
+          total: bs.total,
+          processed: bs.processed,
+          successCount: bs.successCount,
+          errorCount: bs.errorCount,
+          inTransitSum: bs.inTransitSum,
+          clearedSum: bs.clearedSum,
+          bouncedSum: bs.bouncedSum,
+          timestamp: new Date().toISOString()
+        };
+        try {
+          localStorage.setItem('sayad_last_batch_results', JSON.stringify(this.state.lastBatchResults));
+        } catch (e) {}
+
+        this.showToast(res.reason || 'استعلام این فقره چک همچنان ناموفق بود.', 'warn');
+        this.updateBulkDrilldownTabUI();
+        this.renderBulkDrilldownList();
+      }
+    } catch (err) {
+      this.showToast(`خطا در استعلام مجدد: ${err.message}`, 'error');
+      this.updateBulkDrilldownTabUI();
+      this.renderBulkDrilldownList();
+    } finally {
+      this.state.bulkDrilldown.retryingId = null;
+    }
+  },
+
+  retryFailedBatchFromDrilldown() {
+    this.closeBulkDrilldownModal();
+    this.openBulkInquiryModal();
+    this.retryFailedBatch();
+  },
+
+  exportBulkDrilldownToExcel() {
+    if (!window.XLSX) {
+      this.showToast('کتابخانه اکسل در دسترس نیست.', 'error');
+      return;
+    }
+
+    const batchState = window.PasargadInquiryEngine.batchState;
+    const failedItems = (batchState && batchState.failedItems) || (this.state.lastBatchResults && this.state.lastBatchResults.failedItems) || [];
+    const successItems = (batchState && batchState.successItems) || (this.state.lastBatchResults && this.state.lastBatchResults.successItems) || [];
+    const tab = this.state.bulkDrilldown.activeTab;
+
+    let exportRows = [];
+
+    if (tab === 'failed') {
+      exportRows = failedItems.map((f, idx) => {
+        const cust = this.state.customers.find(c => String(c.id) === String(f.item.customer_id));
+        return {
+          'ردیف': idx + 1,
+          'شناسه صیادی': f.item.sayadi_id,
+          'شماره چک': f.item.cheque_number || '---',
+          'نام مشتری / صادرکننده': cust ? cust.full_name : (f.item.customer_name || 'نامشخص'),
+          'کد ملی مشتری': cust ? (cust.national_id || '---') : '---',
+          'مبلغ چک (ریال)': f.item.amount || 0,
+          'مبلغ چک (تومان)': Math.round((f.item.amount || 0) / 10),
+          'نام بانک': f.item.bank_name || '---',
+          'تاریخ سررسید': f.item.cheque_date || '---',
+          'وضعیت': 'ناموفق',
+          'علت دقیق عدم موفقیت': f.reason || '---',
+          'دسته‌بندی خطا': f.status || 'خطا',
+          'جزئیات فنی / پاسخ خام سرور': typeof f.rawReason === 'object' ? JSON.stringify(f.rawReason) : (f.rawReason || '---'),
+          'زمان ثبت': f.timestamp || '---'
+        };
+      });
+    } else if (tab === 'success') {
+      exportRows = successItems.map((s, idx) => {
+        const cust = this.state.customers.find(c => String(c.id) === String(s.item.customer_id));
+        const res = s.result || {};
+        const holder = this.state.holders.find(h => h.id === (res.holder_id || s.item.holder_id));
+        const holderName = res.holder_name || (holder ? holder.full_name : 'یافت‌شده');
+
+        return {
+          'ردیف': idx + 1,
+          'شناسه صیادی': s.item.sayadi_id,
+          'شماره چک': s.item.cheque_number || '---',
+          'نام مشتری / صادرکننده': cust ? cust.full_name : (s.item.customer_name || 'نامشخص'),
+          'کد ملی مشتری': cust ? (cust.national_id || '---') : '---',
+          'مبلغ چک (ریال)': s.item.amount || 0,
+          'مبلغ چک (تومان)': Math.round((s.item.amount || 0) / 10),
+          'نام بانک': s.item.bank_name || '---',
+          'تاریخ سررسید': s.item.cheque_date || '---',
+          'دارنده شناسایی‌شده': holderName,
+          'مبلغ در راه (ریال)': res.in_transit_amount || 0,
+          'مبلغ کارسازی‌شده (ریال)': res.cleared_amount || 0,
+          'مبلغ برگشتی (ریال)': res.bounced_amount || 0,
+          'وضعیت برگشتی': (res.bounced_amount || 0) > 0 ? 'دارای برگشتی' : 'فاقد برگشتی',
+          'وضعیت': 'موفق',
+          'زمان استعلام': s.timestamp || res.inquiry_time || '---'
+        };
+      });
+    } else {
+      const fRows = failedItems.map((f, idx) => {
+        const cust = this.state.customers.find(c => String(c.id) === String(f.item.customer_id));
+        return {
+          'ردیف': idx + 1,
+          'شناسه صیادی': f.item.sayadi_id,
+          'شماره چک': f.item.cheque_number || '---',
+          'نام مشتری': cust ? cust.full_name : (f.item.customer_name || 'نامشخص'),
+          'کد ملی مشتری': cust ? (cust.national_id || '---') : '---',
+          'مبلغ چک (ریال)': f.item.amount || 0,
+          'مبلغ چک (تومان)': Math.round((f.item.amount || 0) / 10),
+          'بانک': f.item.bank_name || '---',
+          'سررسید': f.item.cheque_date || '---',
+          'وضعیت استعلام': 'ناموفق',
+          'علت دقیق / دارنده': f.reason || '---',
+          'مبلغ در راه (ریال)': 0,
+          'مبلغ برگشتی (ریال)': 0
+        };
+      });
+
+      const sRows = successItems.map((s, idx) => {
+        const cust = this.state.customers.find(c => String(c.id) === String(s.item.customer_id));
+        const res = s.result || {};
+        const holder = this.state.holders.find(h => h.id === (res.holder_id || s.item.holder_id));
+        const holderName = res.holder_name || (holder ? holder.full_name : 'یافت‌شده');
+
+        return {
+          'ردیف': fRows.length + idx + 1,
+          'شناسه صیادی': s.item.sayadi_id,
+          'شماره چک': s.item.cheque_number || '---',
+          'نام مشتری': cust ? cust.full_name : (s.item.customer_name || 'نامشخص'),
+          'کد ملی مشتری': cust ? (cust.national_id || '---') : '---',
+          'مبلغ چک (ریال)': s.item.amount || 0,
+          'مبلغ چک (تومان)': Math.round((s.item.amount || 0) / 10),
+          'بانک': s.item.bank_name || '---',
+          'سررسید': s.item.cheque_date || '---',
+          'وضعیت استعلام': 'موفق',
+          'علت دقیق / دارنده': `دارنده: ${holderName}`,
+          'مبلغ در راه (ریال)': res.in_transit_amount || 0,
+          'مبلغ برگشتی (ریال)': res.bounced_amount || 0
+        };
+      });
+
+      exportRows = [...fRows, ...sRows];
+    }
+
+    if (exportRows.length === 0) {
+      this.showToast('داده‌ای برای خروجی اکسل در این بخش وجود ندارد.', 'warn');
+      return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "گزارش استعلام");
+    const filename = `گزارش_استعلام_گروهی_${tab}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    this.showToast(`فایل اکسل با ${exportRows.length} ردیف دانلود شد.`, 'success');
+  },
+
+  renderBulkDrilldownList() {
+    const container = document.getElementById('drilldown-content-container');
+    if (!container) return;
+
+    const prevScrollTop = container.scrollTop;
+
+    const batchState = window.PasargadInquiryEngine.batchState;
+    const failedItems = (batchState && batchState.failedItems) || (this.state.lastBatchResults && this.state.lastBatchResults.failedItems) || [];
+    const successItems = (batchState && batchState.successItems) || (this.state.lastBatchResults && this.state.lastBatchResults.successItems) || [];
+
+    // Update tab counts
+    const countFailedEl = document.getElementById('drilldown-count-failed');
+    const countSuccessEl = document.getElementById('drilldown-count-success');
+    const countAllEl = document.getElementById('drilldown-count-all');
+    if (countFailedEl) countFailedEl.innerText = failedItems.length.toLocaleString('fa-IR');
+    if (countSuccessEl) countSuccessEl.innerText = successItems.length.toLocaleString('fa-IR');
+    if (countAllEl) countAllEl.innerText = (failedItems.length + successItems.length).toLocaleString('fa-IR');
+
+    // Update footer stats
+    const fTotal = document.getElementById('drilldown-footer-total');
+    const fSuc = document.getElementById('drilldown-footer-success');
+    const fFail = document.getElementById('drilldown-footer-failed');
+    const fInTransit = document.getElementById('drilldown-footer-in-transit');
+    const fBounced = document.getElementById('drilldown-footer-bounced');
+    if (fTotal) fTotal.innerText = (failedItems.length + successItems.length).toLocaleString('fa-IR');
+    if (fSuc) fSuc.innerText = successItems.length.toLocaleString('fa-IR');
+    if (fFail) fFail.innerText = failedItems.length.toLocaleString('fa-IR');
+    if (fInTransit) fInTransit.innerText = this.formatMoney((batchState && batchState.inTransitSum) || (this.state.lastBatchResults && this.state.lastBatchResults.inTransitSum) || 0);
+    if (fBounced) fBounced.innerText = this.formatMoney((batchState && batchState.bouncedSum) || (this.state.lastBatchResults && this.state.lastBatchResults.bouncedSum) || 0);
+
+    const activeTab = this.state.bulkDrilldown.activeTab;
+    const q = (this.state.bulkDrilldown.searchQuery || '').trim().toLowerCase();
+
+    // If nothing has run yet
+    if (failedItems.length === 0 && successItems.length === 0) {
+      container.innerHTML = `
+        <div class="p-12 text-center space-y-4">
+          <div class="w-16 h-16 mx-auto rounded-3xl bg-slate-800/80 flex items-center justify-center text-slate-400 border border-slate-700">
+            <i data-lucide="zap-off" class="w-8 h-8"></i>
+          </div>
+          <div class="space-y-1">
+            <h4 class="font-bold text-slate-200 text-sm">هنوز استعلام گروهی اجرا نشده است</h4>
+            <p class="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+              برای مشاهده موارد موفق و ناموفق، لطفاً ابتدا دکمه «شروع استعلام گروهی» را در پنجره استعلام کلیک کنید تا چک‌ها پردازش شوند.
+            </p>
+          </div>
+          <button onclick="App.closeBulkDrilldownModal(); App.openBulkInquiryModal();" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-2xl text-xs font-bold shadow-lg transition">
+            باز کردن پنجره استعلام گروهی
+          </button>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    if (activeTab === 'failed') {
+      let list = [...failedItems];
+      if (q) {
+        list = list.filter(f => {
+          const cust = this.state.customers.find(c => String(c.id) === String(f.item.customer_id));
+          const custName = cust ? cust.full_name.toLowerCase() : '';
+          const custNid = cust ? (cust.national_id || '') : '';
+          const sayadiId = String(f.item.sayadi_id || '').trim();
+          const chequeNum = String(f.item.cheque_number || '').trim();
+          const bankName = String(f.item.bank_name || '').toLowerCase();
+          const reason = String(f.reason || '').toLowerCase();
+          const status = String(f.status || '').toLowerCase();
+          const rawDetail = typeof f.rawReason === 'object' ? JSON.stringify(f.rawReason).toLowerCase() : String(f.rawReason || '').toLowerCase();
+
+          return (
+            sayadiId.includes(q) ||
+            chequeNum.includes(q) ||
+            bankName.includes(q) ||
+            reason.includes(q) ||
+            status.includes(q) ||
+            rawDetail.includes(q) ||
+            custName.includes(q) ||
+            custNid.includes(q)
+          );
+        });
+      }
+
+      if (list.length === 0) {
+        container.innerHTML = `
+          <div class="p-10 text-center space-y-3">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <i data-lucide="check-check" class="w-7 h-7"></i>
+            </div>
+            <h4 class="font-bold text-emerald-300 text-sm">${q ? 'هیچ چک ناموفقی با این عبارت جستجو یافت نشد.' : 'تبریک! هیچ چک ناموفقی در این استعلام وجود ندارد.'}</h4>
+            <p class="text-xs text-slate-400">${q ? 'عبارت جستجو را تغییر دهید.' : 'تمام چک‌ها با موفقیت از درگاه بانک استعلام شدند.'}</p>
+          </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="overflow-x-auto">
+          <table class="w-full text-right text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
+              <tr>
+                <th class="py-3 px-3.5 text-center w-12">#</th>
+                <th class="py-3 px-4">صادرکننده / مشتری</th>
+                <th class="py-3 px-4">شناسه صیادی و شماره چک</th>
+                <th class="py-3 px-4">مبلغ چک</th>
+                <th class="py-3 px-4">بانک و سررسید</th>
+                <th class="py-3 px-4 min-w-[260px]">علت دقیق عدم موفقیت</th>
+                <th class="py-3 px-4 text-center w-28">عملیات</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">
+              ${list.map((f, idx) => {
+                const cust = this.state.customers.find(c => String(c.id) === String(f.item.customer_id));
+                const custName = cust ? cust.full_name : (f.item.customer_name || 'نامشخص');
+                const cleanSayadi = String(f.item.sayadi_id).trim();
+                const isExpanded = this.state.bulkDrilldown.expandedDiagnostics.has(cleanSayadi);
+                const isRetryingThis = this.state.bulkDrilldown.retryingId === cleanSayadi;
+                
+                let badgeClass = 'bg-rose-500/15 border-rose-500/30 text-rose-300';
+                let iconName = 'alert-circle';
+                let reasonCategory = 'خطای درگاه بانک';
+
+                if (f.status === 'rate_limited') {
+                  badgeClass = 'bg-amber-500/15 border-amber-500/30 text-amber-300';
+                  iconName = 'hourglass';
+                  reasonCategory = 'ترافیک موقت درگاه (۴۲۹)';
+                } else if (f.status === 'not_in_cartable') {
+                  badgeClass = 'bg-purple-500/15 border-purple-500/30 text-purple-300';
+                  iconName = 'search-x';
+                  reasonCategory = 'عدم وجود در کارتابل ۹ دارنده';
+                } else if (f.status === 'connection_error') {
+                  badgeClass = 'bg-orange-500/15 border-orange-500/30 text-orange-300';
+                  iconName = 'wifi-off';
+                  reasonCategory = 'خطای شبکه / ارتباط با سرور';
+                } else if (f.status === 'idcode_mismatch') {
+                  badgeClass = 'bg-red-500/15 border-red-500/30 text-red-300';
+                  iconName = 'user-x';
+                  reasonCategory = 'عدم تطابق کدملی با صیادی';
+                } else if (f.status === 'invalid_holder') {
+                  badgeClass = 'bg-slate-700/40 border-slate-600 text-slate-300';
+                  iconName = 'user-x';
+                  reasonCategory = 'تنظیمات دارنده در سامانه';
+                }
+
+                const rawText = typeof f.rawReason === 'object' ? JSON.stringify(f.rawReason, null, 2) : String(f.rawReason || f.reason || 'بدون جزئیات خام');
+
+                return `
+                  <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-3 px-3.5 text-center font-mono text-slate-400 text-[11px]">${(idx + 1).toLocaleString('fa-IR')}</td>
+                    <td class="py-3 px-4">
+                      <div class="font-bold text-slate-200">${this.escapeHtml(custName)}</div>
+                      ${cust && cust.national_id ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5">${this.escapeHtml(cust.national_id)}</div>` : ''}
+                    </td>
+                    <td class="py-3 px-4">
+                      <div class="flex items-center gap-1.5">
+                        <span class="font-mono font-bold text-sky-400 text-xs">${this.escapeHtml(cleanSayadi)}</span>
+                        <button onclick="App.copyToClipboard('${cleanSayadi}');" class="text-slate-400 hover:text-white p-1 rounded transition" title="کپی شناسه">
+                          <i data-lucide="copy" class="w-3 h-3"></i>
+                        </button>
+                      </div>
+                      <div class="text-[10px] text-slate-400 font-mono mt-0.5">شماره چک: ${this.escapeHtml(f.item.cheque_number || '---')}</div>
+                    </td>
+                    <td class="py-3 px-4">
+                      <div class="font-mono font-bold text-amber-300 text-xs">${App.formatMoney(f.item.amount)} ریال</div>
+                      <div class="text-[10px] text-slate-400 mt-0.5 font-mono">${(Math.round((f.item.amount || 0) / 10)).toLocaleString('fa-IR')} تومان</div>
+                    </td>
+                    <td class="py-3 px-4 text-slate-300 text-xs">
+                      <div class="font-semibold">${this.escapeHtml(f.item.bank_name || '---')}</div>
+                      <div class="text-[10px] text-slate-400 font-mono mt-0.5">سررسید: ${this.escapeHtml(f.item.cheque_date || '---')}</div>
+                    </td>
+                    <td class="py-3 px-4">
+                      <div class="p-2.5 rounded-xl border ${badgeClass} space-y-1">
+                        <div class="flex items-center gap-1.5 font-bold text-xs">
+                          <i data-lucide="${iconName}" class="w-3.5 h-3.5 shrink-0"></i>
+                          <span>${this.escapeHtml(f.reason || 'علت ثبت نشده')}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px] opacity-80 pt-0.5">
+                          <span class="font-sans">${reasonCategory}</span>
+                          <button onclick="App.toggleDiagnosticDetail('${cleanSayadi}')" class="underline hover:text-white flex items-center gap-0.5 transition" title="مشاهده جزئیات پاسخ سرور">
+                            <i data-lucide="terminal" class="w-2.5 h-2.5"></i>
+                            <span>جزئیات فنی</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div id="diag-${cleanSayadi}" class="${isExpanded ? '' : 'hidden'} mt-1.5 p-2 bg-slate-950 rounded-xl text-[10px] font-mono text-slate-300 border border-slate-800/80 break-all select-all">
+                        <div class="text-[9px] text-slate-500 mb-0.5">پاسخ تشخیصی سرور:</div>
+                        ${this.escapeHtml(rawText)}
+                      </div>
+                    </td>
+                    <td class="py-3 px-4 text-center">
+                      <button id="btn-retry-${cleanSayadi}" onclick="App.retrySingleDrilldownCheque('${cleanSayadi}')" ${isRetryingThis ? 'disabled' : ''} class="px-3 py-1.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow transition w-full ${isRetryingThis ? 'opacity-70 cursor-wait' : ''}" title="استعلام مجدد فقط همین چک">
+                        <i data-lucide="refresh-cw" class="w-3 h-3 ${isRetryingThis ? 'animate-spin' : ''}"></i>
+                        <span>${isRetryingThis ? 'در حال بررسی...' : 'تلاش مجدد'}</span>
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+      container.scrollTop = prevScrollTop;
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    if (activeTab === 'success') {
+      let list = [...successItems];
+      if (q) {
+        list = list.filter(s => {
+          const cust = this.state.customers.find(c => String(c.id) === String(s.item.customer_id));
+          const custName = cust ? cust.full_name.toLowerCase() : '';
+          const custNid = cust ? (cust.national_id || '') : '';
+          const holderName = s.result ? (s.result.holder_name || '').toLowerCase() : '';
+          const sayadiId = String(s.item.sayadi_id || '').trim();
+          const chequeNum = String(s.item.cheque_number || '').trim();
+          const bankName = String(s.item.bank_name || '').toLowerCase();
+          const hasBounced = s.result && (s.result.bounced_amount || 0) > 0;
+          const isBouncedQuery = (q.includes('برگشت') || q.includes('bounced')) && hasBounced;
+          const isNoBouncedQuery = (q.includes('فاقد') || q.includes('سالم') || q.includes('سبز')) && !hasBounced;
+          const isInTransitQuery = (q.includes('راه') || q.includes('transit')) && (s.result && (s.result.in_transit_amount || 0) > 0);
+
+          return (
+            sayadiId.includes(q) ||
+            chequeNum.includes(q) ||
+            bankName.includes(q) ||
+            custName.includes(q) ||
+            custNid.includes(q) ||
+            holderName.includes(q) ||
+            isBouncedQuery ||
+            isNoBouncedQuery ||
+            isInTransitQuery
+          );
+        });
+      }
+
+      if (list.length === 0) {
+        container.innerHTML = `
+          <div class="p-10 text-center space-y-3">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-slate-800 flex items-center justify-center text-slate-400">
+              <i data-lucide="inbox" class="w-7 h-7"></i>
+            </div>
+            <h4 class="font-bold text-slate-300 text-sm">هیچ مورد موفقی یافت نشد</h4>
+            <p class="text-xs text-slate-400">موردی مطابق فیلتر جاری یافت نشد.</p>
+          </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="overflow-x-auto">
+          <table class="w-full text-right text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
+              <tr>
+                <th class="py-3 px-3.5 text-center w-12">#</th>
+                <th class="py-3 px-4">صادرکننده / مشتری</th>
+                <th class="py-3 px-4">شناسه صیادی و چک</th>
+                <th class="py-3 px-4">مبلغ چک</th>
+                <th class="py-3 px-4">دارنده شناسایی‌شده</th>
+                <th class="py-3 px-4">مبلغ در راه</th>
+                <th class="py-3 px-4">کارسازی‌شده</th>
+                <th class="py-3 px-4">وضعیت برگشتی</th>
+                <th class="py-3 px-4 text-center">بانک و تاریخ</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">
+              ${list.map((s, idx) => {
+                const cust = this.state.customers.find(c => String(c.id) === String(s.item.customer_id));
+                const custName = cust ? cust.full_name : (s.item.customer_name || 'نامشخص');
+                const cleanSayadi = String(s.item.sayadi_id).trim();
+                const res = s.result || {};
+                const hasBounced = (res.bounced_amount || 0) > 0;
+                const holder = this.state.holders.find(h => h.id === (res.holder_id || s.item.holder_id));
+                const holderName = res.holder_name || (holder ? holder.full_name : 'یافت‌شده');
+
+                return `
+                  <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-3 px-3.5 text-center font-mono text-slate-400 text-[11px]">${(idx + 1).toLocaleString('fa-IR')}</td>
+                    <td class="py-3 px-4">
+                      <div class="font-bold text-slate-200">${this.escapeHtml(custName)}</div>
+                      ${cust && cust.national_id ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5">${this.escapeHtml(cust.national_id)}</div>` : ''}
+                    </td>
+                    <td class="py-3 px-4">
+                      <div class="flex items-center gap-1.5">
+                        <span class="font-mono font-bold text-sky-400 text-xs">${this.escapeHtml(cleanSayadi)}</span>
+                        <button onclick="App.copyToClipboard('${cleanSayadi}');" class="text-slate-400 hover:text-white p-1 rounded transition" title="کپی شناسه">
+                          <i data-lucide="copy" class="w-3 h-3"></i>
+                        </button>
+                      </div>
+                      <div class="text-[10px] text-slate-400 font-mono mt-0.5">شماره: ${this.escapeHtml(s.item.cheque_number || '---')}</div>
+                    </td>
+                    <td class="py-3 px-4">
+                      <div class="font-mono font-bold text-emerald-400 text-xs">${App.formatMoney(s.item.amount)} ریال</div>
+                      <div class="text-[10px] text-slate-400 mt-0.5 font-mono">${(Math.round((s.item.amount || 0) / 10)).toLocaleString('fa-IR')} تومان</div>
+                    </td>
+                    <td class="py-3 px-4">
+                      <span class="px-2.5 py-1 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 font-semibold text-xs inline-flex items-center gap-1">
+                        <i data-lucide="user-check" class="w-3 h-3"></i>
+                        ${this.escapeHtml(holderName)}
+                      </span>
+                    </td>
+                    <td class="py-3 px-4 font-mono font-semibold text-sky-300">${App.formatMoney(res.in_transit_amount || 0)}</td>
+                    <td class="py-3 px-4 font-mono font-semibold text-emerald-300">${App.formatMoney(res.cleared_amount || 0)}</td>
+                    <td class="py-3 px-4">
+                      ${hasBounced 
+                        ? `<span class="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold font-mono text-[11px] inline-flex items-center gap-1">
+                            <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+                            ${App.formatMoney(res.bounced_amount)} ریال
+                           </span>`
+                        : `<span class="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-[11px] border border-emerald-500/20 inline-flex items-center gap-1">
+                            <i data-lucide="check" class="w-3 h-3"></i> فاقد برگشتی
+                           </span>`
+                      }
+                    </td>
+                    <td class="py-3 px-4 text-center text-slate-400 text-[11px]">
+                      <div>${this.escapeHtml(s.item.bank_name || '---')}</div>
+                      <div class="font-mono text-[10px] mt-0.5">${this.escapeHtml(s.item.cheque_date || '---')}</div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+      container.scrollTop = prevScrollTop;
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    if (activeTab === 'all') {
+      const combined = [
+        ...failedItems.map(f => ({ type: 'failed', ...f })),
+        ...successItems.map(s => ({ type: 'success', ...s }))
+      ];
+
+      let list = combined;
+      if (q) {
+        list = list.filter(item => {
+          const cust = this.state.customers.find(c => String(c.id) === String(item.item.customer_id));
+          const custName = cust ? cust.full_name.toLowerCase() : '';
+          const custNid = cust ? (cust.national_id || '') : '';
+          const holderName = item.result ? (item.result.holder_name || '').toLowerCase() : '';
+          const reasonText = String(item.reason || '').toLowerCase();
+          const sayadiId = String(item.item.sayadi_id || '').trim();
+          const chequeNum = String(item.item.cheque_number || '').trim();
+          const bankName = String(item.item.bank_name || '').toLowerCase();
+          const isSuc = item.type === 'success';
+          const isStatusQuery = (q === 'موفق' && isSuc) || (q === 'ناموفق' && !isSuc);
+          const hasBounced = item.result && (item.result.bounced_amount || 0) > 0;
+          const isBouncedQuery = (q.includes('برگشت') || q.includes('bounced')) && hasBounced;
+
+          return (
+            sayadiId.includes(q) ||
+            chequeNum.includes(q) ||
+            bankName.includes(q) ||
+            custName.includes(q) ||
+            custNid.includes(q) ||
+            holderName.includes(q) ||
+            reasonText.includes(q) ||
+            isStatusQuery ||
+            isBouncedQuery
+          );
+        });
+      }
+
+      if (list.length === 0) {
+        container.innerHTML = `
+          <div class="p-10 text-center space-y-3">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-slate-800 flex items-center justify-center text-slate-400">
+              <i data-lucide="inbox" class="w-7 h-7"></i>
+            </div>
+            <h4 class="font-bold text-slate-300 text-sm">موردی یافت نشد</h4>
+            <p class="text-xs text-slate-400">${q ? 'هیچ چکی مطابق با عبارت جستجوی واردشده پیدا نشد.' : 'لیست چک‌ها در این بخش خالی است.'}</p>
+          </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="overflow-x-auto">
+          <table class="w-full text-right text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
+              <tr>
+                <th class="py-3 px-3.5 text-center w-12">#</th>
+                <th class="py-3 px-4">صادرکننده / مشتری</th>
+                <th class="py-3 px-4">شناسه صیادی</th>
+                <th class="py-3 px-4">مبلغ چک</th>
+                <th class="py-3 px-4">بانک و تاریخ</th>
+                <th class="py-3 px-4">وضعیت</th>
+                <th class="py-3 px-4">شرح وضعیت / دارنده</th>
+                <th class="py-3 px-4 text-center w-28">عملیات</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">
+              ${list.map((cItem, idx) => {
+                const cust = this.state.customers.find(c => String(c.id) === String(cItem.item.customer_id));
+                const custName = cust ? cust.full_name : (cItem.item.customer_name || 'نامشخص');
+                const cleanSayadi = String(cItem.item.sayadi_id).trim();
+                const isSuc = cItem.type === 'success';
+                const isRetryingThis = this.state.bulkDrilldown.retryingId === cleanSayadi;
+
+                return `
+                  <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-3 px-3.5 text-center font-mono text-slate-400 text-[11px]">${(idx + 1).toLocaleString('fa-IR')}</td>
+                    <td class="py-3 px-4">
+                      <div class="font-bold text-slate-200">${this.escapeHtml(custName)}</div>
+                      ${cust && cust.national_id ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5">${this.escapeHtml(cust.national_id)}</div>` : ''}
+                    </td>
+                    <td class="py-3 px-4">
+                      <div class="flex items-center gap-1.5">
+                        <span class="font-mono font-bold text-sky-400 text-xs">${this.escapeHtml(cleanSayadi)}</span>
+                        <button onclick="App.copyToClipboard('${cleanSayadi}');" class="text-slate-400 hover:text-white p-1 rounded transition" title="کپی شناسه">
+                          <i data-lucide="copy" class="w-3 h-3"></i>
+                        </button>
+                      </div>
+                      <div class="text-[10px] text-slate-400 font-mono mt-0.5">شماره: ${this.escapeHtml(cItem.item.cheque_number || '---')}</div>
+                    </td>
+                    <td class="py-3 px-4">
+                      <div class="font-mono font-bold text-xs">${App.formatMoney(cItem.item.amount)} ریال</div>
+                      <div class="text-[10px] text-slate-400 mt-0.5 font-mono">${(Math.round((cItem.item.amount || 0) / 10)).toLocaleString('fa-IR')} تومان</div>
+                    </td>
+                    <td class="py-3 px-4 text-slate-300 text-xs">${this.escapeHtml(cItem.item.bank_name || '---')} (${this.escapeHtml(cItem.item.cheque_date || '---')})</td>
+                    <td class="py-3 px-4">
+                      ${isSuc 
+                        ? `<span class="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold inline-flex items-center gap-1">
+                            <i data-lucide="check-circle-2" class="w-3 h-3"></i> موفق
+                           </span>`
+                        : `<span class="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold inline-flex items-center gap-1">
+                            <i data-lucide="alert-triangle" class="w-3 h-3"></i> ناموفق
+                           </span>`
+                      }
+                    </td>
+                    <td class="py-3 px-4 text-xs">
+                      ${isSuc 
+                        ? `<span class="text-emerald-300">دارنده: ${this.escapeHtml(cItem.result ? cItem.result.holder_name : 'یافت‌شده')} (در راه: ${App.formatMoney(cItem.result ? cItem.result.in_transit_amount : 0)})</span>`
+                        : `<span class="text-rose-300 font-semibold">${this.escapeHtml(cItem.reason || 'ناموفق')}</span>`
+                      }
+                    </td>
+                    <td class="py-3 px-4 text-center">
+                      ${!isSuc 
+                        ? `<button id="btn-retry-${cleanSayadi}" onclick="App.retrySingleDrilldownCheque('${cleanSayadi}')" ${isRetryingThis ? 'disabled' : ''} class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 w-full ${isRetryingThis ? 'opacity-70 cursor-wait' : ''}">
+                            <i data-lucide="refresh-cw" class="w-3 h-3 ${isRetryingThis ? 'animate-spin' : ''}"></i><span>${isRetryingThis ? 'در حال بررسی...' : 'تلاش مجدد'}</span>
+                           </button>`
+                        : `<span class="text-slate-500 text-xs">---</span>`
+                      }
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+      container.scrollTop = prevScrollTop;
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
   },
 
 
@@ -2132,6 +3196,46 @@ const App = {
   formatMoney(num) {
     if (!num) return '۰';
     return Number(num).toLocaleString('fa-IR');
+  },
+
+  escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  },
+
+  copyToClipboard(text, message = 'شناسه صیادی با موفقیت در حافظه کپی شد') {
+    if (!text) return;
+    const clean = String(text).trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(clean).then(() => {
+        this.showToast(message, 'info');
+      }).catch(() => {
+        this.fallbackCopyText(clean, message);
+      });
+    } else {
+      this.fallbackCopyText(clean, message);
+    }
+  },
+
+  fallbackCopyText(text, message) {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      this.showToast(message, 'info');
+    } catch (e) {
+      this.showToast('امکان کپی خودکار فراهم نشد.', 'warn');
+    }
   },
 
   populateHolderDropdowns() {

@@ -102,6 +102,12 @@
         <span>استعلام دسته‌جمعی سبد</span>
       </button>
 
+      <!-- Bulk Inquiry Drill-Down Report -->
+      <button onclick="App.openBulkDrilldown(); App.toggleMobileSidebar(false);" class="w-full flex items-center justify-center gap-2 px-4 py-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 hover:text-white rounded-2xl text-xs font-semibold transition" title="مشاهده لیست تفکیکی موارد موفق و ناموفق استعلام">
+        <i data-lucide="file-search" class="w-4 h-4 text-sky-400"></i>
+        <span>گزارش تفکیکی نتایج استعلام</span>
+      </button>
+
       <!-- Excel Export -->
       <button onclick="App.exportToExcel()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-2xl text-xs font-bold transition">
         <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
@@ -453,7 +459,12 @@
             فهرست چک‌های صیادی
           </h2>
 
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2.5">
+            <button onclick="App.openBulkDrilldown()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition" title="مشاهده گزارش و دلایل استعلام گروهی">
+              <i data-lucide="file-search" class="w-3.5 h-3.5 text-sky-400"></i>
+              <span class="hidden sm:inline">گزارش تفکیکی استعلام</span>
+            </button>
+
             <button onclick="App.openBulkInquiryModal()" class="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition">
               <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-300"></i>
               استعلام گروهی چک‌ها
@@ -848,23 +859,62 @@
           <div id="bulk-progress-bar" class="h-full bg-gradient-to-r from-blue-600 to-sky-400 rounded-full transition-all duration-300" style="width: 0%"></div>
         </div>
 
-        <!-- Stats Counter -->
-        <div class="grid grid-cols-4 gap-2 text-center pt-2 text-xs font-mono">
-          <div class="p-2 bg-slate-800/80 rounded-xl">
-            <div class="text-[10px] text-slate-400">موفق</div>
-            <div id="bulk-stat-success" class="font-bold text-emerald-400 text-sm">۰</div>
+        <!-- Stats Counter (Clickable Interactive Drilldowns) -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center pt-2 text-xs font-mono">
+          <div id="bulk-card-success" onclick="App.openBulkDrilldown('success')" class="p-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 hover:border-emerald-500/60 rounded-2xl cursor-pointer transition-all duration-200 group relative select-none shadow-sm hover:scale-[1.02]" title="کلیک کنید: مشاهده لیست تفکیکی چک‌های موفق">
+            <div class="flex items-center justify-center gap-1 text-[11px] text-emerald-400 font-bold mb-0.5">
+              <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+              <span>موفق</span>
+              <i data-lucide="arrow-up-left" class="w-3 h-3 opacity-60 group-hover:opacity-100 transition"></i>
+            </div>
+            <div id="bulk-stat-success" class="font-bold text-emerald-400 text-base">۰</div>
+            <div class="text-[10px] text-emerald-300/80 group-hover:underline mt-0.5 font-sans flex items-center justify-center gap-0.5">
+              <span>مشاهده لیست</span>
+              <span id="bulk-stat-success-sub" class="font-mono"></span>
+            </div>
           </div>
-          <div class="p-2 bg-slate-800/80 rounded-xl">
-            <div class="text-[10px] text-slate-400">ناموفق</div>
-            <div id="bulk-stat-error" class="font-bold text-rose-400 text-sm">۰</div>
+
+          <div id="bulk-card-error" onclick="App.openBulkDrilldown('failed')" class="p-2.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-500/60 rounded-2xl cursor-pointer transition-all duration-200 group relative select-none shadow-sm hover:scale-[1.02]" title="کلیک کنید: مشاهده لیست موارد ناموفق با دلایل دقیق و استعلام مجدد">
+            <div class="flex items-center justify-center gap-1 text-[11px] text-rose-400 font-bold mb-0.5">
+              <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+              <span>ناموفق</span>
+              <i data-lucide="arrow-up-left" class="w-3 h-3 opacity-60 group-hover:opacity-100 transition"></i>
+            </div>
+            <div id="bulk-stat-error" class="font-bold text-rose-400 text-base">۰</div>
+            <div class="text-[10px] text-rose-300/80 group-hover:underline mt-0.5 font-sans flex items-center justify-center gap-0.5">
+              <span>مشاهده دلایل</span>
+              <span id="bulk-stat-error-sub" class="font-mono"></span>
+            </div>
           </div>
-          <div class="p-2 bg-slate-800/80 rounded-xl">
-            <div class="text-[10px] text-slate-400">در راه (ریال)</div>
+
+          <div id="bulk-card-in-transit" onclick="App.openBulkDrilldown('success')" class="p-2.5 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-sky-500/50 rounded-2xl cursor-pointer transition-all duration-200 group relative select-none shadow-sm hover:scale-[1.02]" title="کلیک کنید: مشاهده مبالغ در راه در لیست چک‌های موفق">
+            <div class="text-[10px] text-slate-400 group-hover:text-sky-300 mb-0.5">در راه (ریال)</div>
             <div id="bulk-stat-in-transit" class="font-bold text-sky-400 text-xs truncate">۰</div>
+            <div class="text-[9px] text-slate-500 group-hover:underline mt-1 font-sans">پاسارگاد زنده</div>
           </div>
-          <div class="p-2 bg-slate-800/80 rounded-xl">
-            <div class="text-[10px] text-slate-400">برگشتی (ریال)</div>
+
+          <div id="bulk-card-bounced" onclick="App.openBulkDrilldown('success')" class="p-2.5 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-rose-500/50 rounded-2xl cursor-pointer transition-all duration-200 group relative select-none shadow-sm hover:scale-[1.02]" title="کلیک کنید: مشاهده مبالغ برگشتی در لیست چک‌های موفق">
+            <div class="text-[10px] text-slate-400 group-hover:text-rose-300 mb-0.5">برگشتی (ریال)</div>
             <div id="bulk-stat-bounced" class="font-bold text-rose-400 text-xs truncate">۰</div>
+            <div class="text-[9px] text-slate-500 group-hover:underline mt-1 font-sans">سوءاثر جاری</div>
+          </div>
+        </div>
+
+        <!-- Fast Drilldown Action Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800 text-xs">
+          <span class="text-[11px] text-slate-400 flex items-center gap-1.5">
+            <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5 text-sky-400 shrink-0"></i>
+            <span>روی کارت‌های موفق یا ناموفق کلیک کنید یا دکمه‌های روبرو:</span>
+          </span>
+          <div class="flex items-center gap-2">
+            <button onclick="App.openBulkDrilldown('failed')" class="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
+              <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
+              <span>لیست و دلایل دقیق ناموفق‌ها</span>
+            </button>
+            <button onclick="App.openBulkDrilldown('success')" class="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
+              <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+              <span>لیست چک‌های موفق</span>
+            </button>
           </div>
         </div>
       </div>
@@ -873,15 +923,19 @@
       <div id="bulk-retry-prompt-box" class="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-3 hidden animate-fade-in">
         <div class="flex items-center gap-2 text-amber-300 text-xs font-bold">
           <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 shrink-0"></i>
-          <span>تعداد <span id="bulk-failed-count-display" class="font-mono text-amber-200">۰</span> فقره چک به دلیل ترافیک لحظه‌ای سرور بانک ناموفق شد.</span>
+          <span>تعداد <span id="bulk-failed-count-display" class="font-mono text-amber-200">۰</span> فقره چک ناموفق گزارش شد.</span>
         </div>
         <p class="text-[11px] text-slate-300">
-          پیشنهاد سیستم: می‌توانید با کلیک روی دکمه زیر، فقط همین موارد ناموفق را با سرعت ایمن (Safe Mode) به‌صورت خودکار مجدداً استعلام بگیرید تا ۱۰۰٪ ثبت شوند.
+          می‌توانید تک‌تک دلایل عدم موفقیت را در پنل جزئیات مشاهده کنید یا با کلیک روی دکمه استعلام مجدد، کل سبد ناموفق را در حالت امن بازتلاش کنید.
         </p>
-        <div class="flex justify-end">
+        <div class="flex flex-wrap items-center justify-end gap-2.5">
+          <button onclick="App.openBulkDrilldown('failed')" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition">
+            <i data-lucide="list-collapse" class="w-3.5 h-3.5"></i>
+            <span>مشاهده لیست تفکیکی و علل دقیق</span>
+          </button>
           <button onclick="App.retryFailedBatch()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-lg flex items-center gap-1.5 transition">
             <i data-lucide="refresh-cw" class="w-3.5 h-3.5 animate-spin"></i>
-            <span>استعلام مجدد موارد ناموفق در حالت امن (توصیه می‌شود)</span>
+            <span>استعلام مجدد تمام موارد ناموفق (Safe Mode)</span>
           </button>
         </div>
       </div>
@@ -893,6 +947,95 @@
         <button id="btn-resume-bulk" onclick="App.resumeBulkInquiry()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-bold transition hidden">ادامه عملیات</button>
         <button id="btn-start-bulk" onclick="App.startBulkInquiry()" class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-2xl text-xs font-bold shadow-lg transition">شروع استعلام گروهی</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       🔍 Modal: Bulk Inquiry Drill-Down & Failure Diagnostics
+       ───────────────────────────────────────────────────────────── -->
+  <div id="bulk-drilldown-modal" class="modal-backdrop fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="glass-card w-full max-w-5xl max-h-[90vh] flex flex-col rounded-3xl p-5 sm:p-6 shadow-2xl animate-fade-in space-y-4 border border-slate-700/80">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-600 to-indigo-600 text-white flex items-center justify-center shadow-lg">
+            <i data-lucide="file-search" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="font-bold text-base sm:text-lg">بررسی تفکیکی نتایج استعلام گروهی سبد چک‌ها</h3>
+              <span id="drilldown-status-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-sky-500/20 text-sky-400 border border-sky-500/30">گزارش لحظه‌ای</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">مشاهده تفصیلی چک‌های موفق، دلایل دقیق عدم موفقیت، اطلاعات تشخیصی و بازتلاش هوشمند</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="App.exportBulkDrilldownToExcel()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs flex items-center gap-1.5 transition border border-slate-700" title="خروجی اکسل از این جدول">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">خروجی اکسل</span>
+          </button>
+          <button onclick="App.closeBulkDrilldownModal()" class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition" title="بستن">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Toolbar: Tabs, Search and Actions -->
+      <div class="flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <!-- Tabs -->
+        <div class="flex items-center gap-1.5 bg-slate-900/80 p-1 rounded-2xl border border-slate-800">
+          <button id="drilldown-tab-failed" onclick="App.setBulkDrilldownTab('failed')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-rose-600 text-white shadow">
+            <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+            <span>موارد ناموفق</span>
+            <span id="drilldown-count-failed" class="px-1.5 py-0.5 bg-rose-950 text-rose-200 rounded-lg text-[10px] font-mono">۰</span>
+          </button>
+
+          <button id="drilldown-tab-success" onclick="App.setBulkDrilldownTab('success')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white">
+            <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+            <span>موارد موفق</span>
+            <span id="drilldown-count-success" class="px-1.5 py-0.5 bg-emerald-950 text-emerald-300 rounded-lg text-[10px] font-mono">۰</span>
+          </button>
+
+          <button id="drilldown-tab-all" onclick="App.setBulkDrilldownTab('all')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white">
+            <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+            <span>همه چک‌ها</span>
+            <span id="drilldown-count-all" class="px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded-lg text-[10px] font-mono">۰</span>
+          </button>
+        </div>
+
+        <!-- Search Bar and Batch Retry -->
+        <div class="flex items-center gap-2 flex-1 max-w-md">
+          <div class="relative flex-1">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute right-3 top-2.5"></i>
+            <input id="drilldown-search-input" oninput="App.filterBulkDrilldown(this.value)" type="text" placeholder="جستجو بر اساس نام، شناسه صیادی، بانک، علت..." class="w-full bg-slate-900/90 border border-slate-700/80 rounded-2xl pr-9 pl-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition">
+          </div>
+          <button id="drilldown-btn-retry-all" onclick="App.retryFailedBatchFromDrilldown()" class="px-3.5 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow transition shrink-0 hidden">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            <span>استعلام مجدد تمام ناموفق‌ها</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Dynamic Content Table / Cards Container -->
+      <div id="drilldown-content-container" class="overflow-y-auto flex-1 max-h-[55vh] rounded-2xl border border-slate-700/60 bg-slate-900/40 custom-scrollbar">
+        <!-- Rendered dynamically by App.renderBulkDrilldownList() -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-700/60 shrink-0 text-xs">
+        <div class="flex flex-wrap items-center gap-4 text-slate-400 font-mono text-[11px]">
+          <div>کل پردازش‌شده: <span id="drilldown-footer-total" class="text-white font-bold">۰</span></div>
+          <div>موفق: <span id="drilldown-footer-success" class="text-emerald-400 font-bold">۰</span></div>
+          <div>ناموفق: <span id="drilldown-footer-failed" class="text-rose-400 font-bold">۰</span></div>
+          <div>در راه: <span id="drilldown-footer-in-transit" class="text-sky-400 font-bold">۰</span> ریال</div>
+          <div>برگشتی: <span id="drilldown-footer-bounced" class="text-rose-400 font-bold">۰</span> ریال</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="App.closeBulkDrilldownModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-semibold transition">بستن</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -1194,9 +1337,19 @@
       </div>
       <div id="pip-progress-sub" class="text-[10px] text-slate-400 font-mono">در حال پردازش...</div>
     </div>
-    <button class="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition" title="بزرگ‌نمایی پنجره">
-      <i data-lucide="maximize-2" class="w-4 h-4"></i>
-    </button>
+    <div class="flex items-center gap-1.5" onclick="event.stopPropagation()">
+      <button onclick="App.openBulkDrilldown('failed')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-xl text-[10px] font-bold transition flex items-center gap-1" title="مشاهده موارد ناموفق و دلایل">
+        <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+        <span>ناموفق‌ها</span>
+      </button>
+      <button onclick="App.openBulkDrilldown('success')" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-[10px] font-bold transition flex items-center gap-1" title="مشاهده چک‌های موفق">
+        <i data-lucide="check-circle-2" class="w-3 h-3"></i>
+        <span>موفق‌ها</span>
+      </button>
+      <button onclick="App.maximizeBulkModal()" class="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition" title="بزرگ‌نمایی پنجره">
+        <i data-lucide="maximize-2" class="w-4 h-4"></i>
+      </button>
+    </div>
   </div>
 
   <!-- ─────────────────────────────────────────────────────────────

@@ -23,7 +23,9 @@ class PasargadEngine {
       errorCount: 0,
       inTransitSum: 0,
       clearedSum: 0,
-      bouncedSum: 0
+      bouncedSum: 0,
+      failedItems: [],
+      successItems: []
     };
 
     // Auto-Scheduler state
@@ -102,6 +104,7 @@ class PasargadEngine {
   }
 
   updateStatusBadge(connected) {
+    if (typeof document === 'undefined') return;
     const badge = document.getElementById('backend-status-badge');
     if (!badge) return;
 
@@ -235,6 +238,7 @@ class PasargadEngine {
         preserved_from_history: data.preserved_from_history || false,
         message: data.message || 'استعلام با موفقیت دریافت شد',
         is_passed_due: data.is_passed_due || false,
+        raw_response: data.raw_response || data.message || '',
         inquiry_time: new Date().toISOString()
       };
 
@@ -279,19 +283,30 @@ class PasargadEngine {
     const onItemComplete = callbacks.onItemComplete || (() => {});
     const onFinished = callbacks.onFinished || (() => {});
 
-    this.batchState = {
-      isRunning: true,
-      isPaused: false,
-      isCancelled: false,
-      total: items.length,
-      processed: 0,
-      successCount: 0,
-      errorCount: 0,
-      inTransitSum: 0,
-      clearedSum: 0,
-      bouncedSum: 0,
-      failedItems: []
-    };
+    if (options.isRetryRun) {
+      this.batchState.isRunning = true;
+      this.batchState.isPaused = false;
+      this.batchState.isCancelled = false;
+      this.batchState.total = items.length;
+      this.batchState.processed = 0;
+      if (!this.batchState.failedItems) this.batchState.failedItems = [];
+      if (!this.batchState.successItems) this.batchState.successItems = [];
+    } else {
+      this.batchState = {
+        isRunning: true,
+        isPaused: false,
+        isCancelled: false,
+        total: items.length,
+        processed: 0,
+        successCount: 0,
+        errorCount: 0,
+        inTransitSum: 0,
+        clearedSum: 0,
+        bouncedSum: 0,
+        failedItems: [],
+        successItems: []
+      };
+    }
 
     window.AppLogger.batch('BATCH', `آغاز استعلام موازی سبد مشتریان (${items.length} فقره چک) با ${concurrency} فرآیند موازی و تاخیر بهینه...`);
 
@@ -314,8 +329,18 @@ class PasargadEngine {
         const holder = holderMap[item.holder_id] || options.defaultHolder;
         if (!holder || !holder.national_id) {
           this.batchState.processed++;
-          this.batchState.errorCount++;
-          this.batchState.failedItems.push({ item, reason: 'فاقد دارنده معتبر' });
+          if (!options.isRetryRun) this.batchState.errorCount++;
+          const failedEntry = {
+            item,
+            reason: 'فاقد دارنده معتبر در سیستم (هیچ‌یک از ۹ دارنده مشخص نیست)',
+            rawReason: 'شناسه دارنده خالی یا کدملی دارنده نامعتبر است',
+            status: 'invalid_holder',
+            timestamp: new Date().toISOString()
+          };
+          const fIdx = this.batchState.failedItems.findIndex(f => f.item.sayadi_id === item.sayadi_id);
+          if (fIdx >= 0) this.batchState.failedItems[fIdx] = failedEntry;
+          else this.batchState.failedItems.push(failedEntry);
+
           onProgress({ ...this.batchState, currentItem: item });
           continue;
         }
@@ -331,7 +356,31 @@ class PasargadEngine {
 
           if (res.status === 'success') {
             this.batchState.processed++;
-            this.batchState.successCount++;
+            if (options.isRetryRun && this.batchState.errorCount > 0) {
+              this.batchState.errorCount--;
+            }
+
+            // Remove from failedItems
+            this.batchState.failedItems = (this.batchState.failedItems || []).filter(f => f.item.sayadi_id !== item.sayadi_id);
+
+            // Add to successItems (deduplicating previous values)
+            const sIdx = this.batchState.successItems.findIndex(s => s.item.sayadi_id === item.sayadi_id);
+            const successEntry = {
+              item,
+              result: res,
+              timestamp: new Date().toISOString()
+            };
+            if (sIdx >= 0) {
+              const oldRes = this.batchState.successItems[sIdx].result || {};
+              this.batchState.inTransitSum -= (oldRes.in_transit_amount || 0);
+              this.batchState.clearedSum -= (oldRes.cleared_amount || 0);
+              this.batchState.bouncedSum -= (oldRes.bounced_amount || 0);
+              this.batchState.successItems[sIdx] = successEntry;
+            } else {
+              this.batchState.successCount++;
+              this.batchState.successItems.push(successEntry);
+            }
+
             this.batchState.inTransitSum += (res.in_transit_amount || 0);
             this.batchState.clearedSum += (res.cleared_amount || 0);
             this.batchState.bouncedSum += (res.bounced_amount || 0);
@@ -341,24 +390,87 @@ class PasargadEngine {
             onItemComplete(item, res);
           } else if (res.status === 'rate_limited') {
             this.batchState.processed++;
-            this.batchState.errorCount++;
-            this.batchState.failedItems.push({ item, reason: 'ترافیک بالای درگاه بانک' });
+            if (!options.isRetryRun) this.batchState.errorCount++;
+
+            const failReason = res.message || 'ترافیک بالای درگاه بانک پاسارگاد (کد ۴۲۹ یا ۵۲۴)';
+            const rawDetail = res.raw_response || res.message || 'HTTP 429 Too Many Requests - محدودیت تعداد درخواست درگاه بانک';
+            const failedEntry = {
+              item,
+              reason: failReason,
+              rawReason: rawDetail,
+              status: 'rate_limited',
+              result: res,
+              timestamp: new Date().toISOString()
+            };
+
+            const fIdx = this.batchState.failedItems.findIndex(f => f.item.sayadi_id === item.sayadi_id);
+            if (fIdx >= 0) this.batchState.failedItems[fIdx] = failedEntry;
+            else this.batchState.failedItems.push(failedEntry);
+
             dynamicDelay = Math.min(2500, dynamicDelay + 500);
             window.AppLogger.warn('BATCH', `ترافیک درگاه بانک برای شناسه ${item.sayadi_id}. افزایش تاخیر امن به ${dynamicDelay}ms...`);
             results.push({ item, result: res, status: 'rate_limited' });
             onItemComplete(item, res);
           } else {
             this.batchState.processed++;
-            this.batchState.errorCount++;
-            this.batchState.failedItems.push({ item, reason: res.message || 'چک در کارتابل یافت نشد' });
+            if (!options.isRetryRun) this.batchState.errorCount++;
+
+            let failReason = res.message;
+            if (!failReason || failReason === 'استعلام با موفقیت دریافت شد') {
+              if (res.is_passed_due) {
+                failReason = 'چک در کارتابل هیچ‌یک از ۹ دارنده نیست (احتمالاً پاس شده است - سررسید گذشته)';
+              } else {
+                failReason = 'چک در کارتابل هیچ‌یک از ۹ دارنده صندوق یافت نشد';
+              }
+            }
+
+            const rawDetail = res.raw_response || res.message || 'چک در کارتابل هیچ‌یک از دارندگان صندوق یافت نشد';
+            const failedEntry = {
+              item,
+              reason: failReason,
+              rawReason: rawDetail,
+              status: res.status || 'not_in_cartable',
+              result: res,
+              timestamp: new Date().toISOString()
+            };
+
+            const fIdx = this.batchState.failedItems.findIndex(f => f.item.sayadi_id === item.sayadi_id);
+            if (fIdx >= 0) this.batchState.failedItems[fIdx] = failedEntry;
+            else this.batchState.failedItems.push(failedEntry);
+
             results.push({ item, result: res, status: res.status || 'not_in_cartable' });
             onItemComplete(item, res);
           }
 
         } catch (err) {
           this.batchState.processed++;
-          this.batchState.errorCount++;
-          this.batchState.failedItems.push({ item, reason: err.message });
+          if (!options.isRetryRun) this.batchState.errorCount++;
+
+          let failReason = err.message || 'خطا در ارتباط با درگاه بانک';
+          let statusType = 'error';
+          const lowerErr = (err.message || '').toLowerCase();
+          if (lowerErr.includes('failed to fetch') || lowerErr.includes('networkerror') || lowerErr.includes('آفلاین') || lowerErr.includes('connection')) {
+            failReason = 'خطای ارتباط با سرور یا قطعی اینترنت';
+            statusType = 'connection_error';
+          } else if (lowerErr.includes('429') || lowerErr.includes('۴۲۹')) {
+            failReason = 'ترافیک بالای درگاه بانک پاسارگاد (کد ۴۲۹)';
+            statusType = 'rate_limited';
+          } else if (lowerErr.includes('idcode') || lowerErr.includes('کد ملی') || lowerErr.includes('تطابق')) {
+            failReason = 'خطای عدم تطابق کدملی با شناسه صیادی در درگاه بانک';
+            statusType = 'idcode_mismatch';
+          }
+
+          const failedEntry = {
+            item,
+            reason: failReason,
+            rawReason: err.stack || err.message || 'خطای شبکه یا عدم پاسخگویی سرور',
+            status: statusType,
+            timestamp: new Date().toISOString()
+          };
+
+          const fIdx = this.batchState.failedItems.findIndex(f => f.item.sayadi_id === item.sayadi_id);
+          if (fIdx >= 0) this.batchState.failedItems[fIdx] = failedEntry;
+          else this.batchState.failedItems.push(failedEntry);
           
           dynamicDelay = Math.min(2500, dynamicDelay + 300);
           window.AppLogger.warn('BATCH', `خطا در استعلام صیادی ${item.sayadi_id} (${err.message}). افزایش تاخیر امنیتی به ${dynamicDelay}ms...`);
@@ -385,7 +497,7 @@ class PasargadEngine {
   }
 
   async runRetryFailed(holderMap, callbacks = {}) {
-    const failedQueue = this.batchState.failedItems.map(f => f.item);
+    const failedQueue = (this.batchState.failedItems || []).map(f => f.item);
     if (failedQueue.length === 0) {
       throw new Error('موردی برای استعلام مجدد وجود ندارد.');
     }
@@ -398,10 +510,128 @@ class PasargadEngine {
       {
         concurrency: 1, // Single worker for maximum safety
         delayMs: 650,   // Ample spacing between calls
-        forceRefresh: true
+        forceRefresh: true,
+        isRetryRun: true
       },
       callbacks
     );
+  }
+
+  async retrySingleCheque(item, holderMap, options = {}) {
+    if (!this.isLocalBackendConnected) {
+      await this.checkLocalBackend();
+      if (!this.isLocalBackendConnected) {
+        throw new Error('موتور استعلام پایتون آفلاین است. لطفاً فایل run.bat را روی سیستم خود اجرا کنید.');
+      }
+    }
+
+    const holder = (holderMap && holderMap[item.holder_id]) || options.defaultHolder;
+    if (!holder || !holder.national_id) {
+      throw new Error('دارنده چک مشخص نیست یا فاقد کدملی معتبر است.');
+    }
+
+    try {
+      const res = await this.queryCheque(item.sayadi_id, holder.national_id, {
+        forceRefresh: true,
+        holderId: holder.id,
+        customerId: item.customer_id
+      });
+
+      if (res.status === 'success') {
+        // Remove from failedItems
+        if (this.batchState.failedItems) {
+          this.batchState.failedItems = this.batchState.failedItems.filter(f => String(f.item.sayadi_id).trim() !== String(item.sayadi_id).trim());
+        }
+        // Add to successItems
+        if (!this.batchState.successItems) this.batchState.successItems = [];
+        const prevIdx = this.batchState.successItems.findIndex(s => String(s.item.sayadi_id).trim() === String(item.sayadi_id).trim());
+        const successEntry = { item, result: res, timestamp: new Date().toISOString() };
+        if (prevIdx >= 0) {
+          const oldRes = this.batchState.successItems[prevIdx].result || {};
+          this.batchState.inTransitSum -= (oldRes.in_transit_amount || 0);
+          this.batchState.clearedSum -= (oldRes.cleared_amount || 0);
+          this.batchState.bouncedSum -= (oldRes.bounced_amount || 0);
+          this.batchState.successItems[prevIdx] = successEntry;
+        } else {
+          this.batchState.successCount++;
+          this.batchState.successItems.push(successEntry);
+        }
+
+        // Update counts
+        if (this.batchState.errorCount > 0) this.batchState.errorCount--;
+        this.batchState.inTransitSum += (res.in_transit_amount || 0);
+        this.batchState.clearedSum += (res.cleared_amount || 0);
+        this.batchState.bouncedSum += (res.bounced_amount || 0);
+
+        return { status: 'success', result: res };
+      } else {
+        // Update failed entry
+        let failReason = res.message;
+        let statusType = res.status || 'not_in_cartable';
+        if (res.status === 'rate_limited') {
+          failReason = failReason || 'ترافیک بالای درگاه بانک پاسارگاد (کد ۴۲۹ یا ۵۲۴)';
+          statusType = 'rate_limited';
+        } else if (res.status === 'not_in_cartable') {
+          if (!failReason || failReason === 'استعلام با موفقیت دریافت شد') {
+            failReason = res.is_passed_due
+              ? 'چک در کارتابل هیچ‌یک از ۹ دارنده نیست (احتمالاً پاس شده است - سررسید گذشته)'
+              : 'چک در کارتابل هیچ‌یک از ۹ دارنده صندوق یافت نشد';
+          }
+        }
+
+        const rawDetail = res.raw_response || res.message || 'پاسخ ناموفق درگاه بانک';
+        const failedEntry = {
+          item,
+          reason: failReason,
+          rawReason: rawDetail,
+          status: statusType,
+          result: res,
+          timestamp: new Date().toISOString()
+        };
+
+        if (!this.batchState.failedItems) this.batchState.failedItems = [];
+        const fIdx = this.batchState.failedItems.findIndex(f => String(f.item.sayadi_id).trim() === String(item.sayadi_id).trim());
+        if (fIdx >= 0) this.batchState.failedItems[fIdx] = failedEntry;
+        else {
+          this.batchState.failedItems.push(failedEntry);
+          this.batchState.errorCount++;
+        }
+
+        return { status: statusType, result: res, reason: failReason, rawReason: rawDetail };
+      }
+    } catch (err) {
+      let failReason = err.message || 'خطا در استعلام مجدد';
+      let statusType = 'error';
+      const lowerErr = (err.message || '').toLowerCase();
+      if (lowerErr.includes('failed to fetch') || lowerErr.includes('networkerror') || lowerErr.includes('آفلاین') || lowerErr.includes('connection')) {
+        failReason = 'خطای ارتباط با سرور محلی یا قطعی اینترنت';
+        statusType = 'connection_error';
+      } else if (lowerErr.includes('429') || lowerErr.includes('۴۲۹')) {
+        failReason = 'ترافیک بالای درگاه بانک پاسارگاد (کد ۴۲۹ یا ۵۲۴)';
+        statusType = 'rate_limited';
+      } else if (lowerErr.includes('idcode') || lowerErr.includes('کد ملی') || lowerErr.includes('تطابق')) {
+        failReason = 'خطای عدم تطابق کدملی با شناسه صیادی در درگاه بانک';
+        statusType = 'idcode_mismatch';
+      }
+
+      const failedEntry = {
+        item,
+        reason: failReason,
+        rawReason: err.stack || err.message,
+        status: statusType,
+        timestamp: new Date().toISOString()
+      };
+
+      if (!this.batchState.failedItems) this.batchState.failedItems = [];
+      const fIdx = this.batchState.failedItems.findIndex(f => String(f.item.sayadi_id).trim() === String(item.sayadi_id).trim());
+      if (fIdx >= 0) this.batchState.failedItems[fIdx] = failedEntry;
+      else {
+        this.batchState.failedItems.push(failedEntry);
+        this.batchState.errorCount++;
+      }
+
+      return { status: statusType, reason: failReason, rawReason: err.message };
+    }
   }
 
 
