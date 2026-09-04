@@ -24,10 +24,16 @@ PREDEFINED_HOLDERS = [
 ]
 
 def get_db():
-    """Get database connection with row factory enabled."""
+    """Get database connection with row factory enabled and performance pragmas."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    conn.execute("PRAGMA busy_timeout = 5000;")
+    conn.execute("PRAGMA cache_size = -64000;") # 64MB cache
+    conn.execute("PRAGMA foreign_keys = ON;")
     return conn
+
 
 def init_db():
     """Initialize database tables and run migration."""
@@ -155,6 +161,15 @@ def init_db():
 
     # Run Data Migration from existing raw tables if needed
     _migrate_existing_data(conn)
+
+    # 7. Create Composite and Performance Indexes
+    cursor = conn.cursor()
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cheques_sayadi ON cheques(sayadi_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cheques_customer_id ON cheques(customer_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cheques_holder_date ON cheques(holder_id, cheque_date);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_pasargad_sayadi_latest ON pasargad_inquiries(sayadi_id, id DESC);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_customers_national_id ON customers(national_id);")
+    conn.commit()
 
     conn.close()
     logger.info("Database initialized & verified successfully.")

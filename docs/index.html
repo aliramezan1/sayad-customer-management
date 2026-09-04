@@ -32,6 +32,15 @@
   <script src="js/theme.js"></script>
   <script src="js/logger.js"></script>
   <script src="js/pasargad_engine.js"></script>
+
+  <!-- PWA Manifest & App Icons (Phase 4) -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="صیاد پرو">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 </head>
 <body class="flex min-h-screen">
 
@@ -74,6 +83,11 @@
         <button onclick="App.switchTab('cheques', 'all'); App.toggleMobileSidebar(false);" data-tab="cheques" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
           <i data-lucide="file-text" class="w-5 h-5"></i>
           <span>تمام چک‌های صیادی</span>
+        </button>
+
+        <button onclick="App.switchTab('risk-matrix'); App.toggleMobileSidebar(false);" data-tab="risk-matrix" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
+          <i data-lucide="layout-grid" class="w-5 h-5 text-amber-400"></i>
+          <span>ماتریس ریسک مشتریان</span>
         </button>
 
         <button onclick="App.switchTab('cbi'); App.toggleMobileSidebar(false);" data-tab="cbi" class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-400 hover:bg-slate-800/40 hover:text-slate-200">
@@ -121,9 +135,9 @@
           <span>لاگ‌ها (<span id="sidebar-log-count">۰</span>)</span>
         </button>
 
-        <button onclick="App.backupDataJSON()" class="flex items-center justify-center gap-1.5 py-2 bg-slate-800/60 hover:bg-slate-700/80 rounded-2xl text-[11px] font-medium transition" title="پشتیبان‌گیری از داده‌ها">
-          <i data-lucide="download" class="w-3.5 h-3.5 text-sky-400"></i>
-          <span>بک‌آپ</span>
+        <button onclick="App.openBackupModal()" class="flex items-center justify-center gap-1.5 py-2 bg-slate-800/60 hover:bg-slate-700/80 rounded-2xl text-[11px] font-medium transition" title="مخزن پشتیبان‌های رمزنگاری‌شده">
+          <i data-lucide="shield-check" class="w-3.5 h-3.5 text-sky-400"></i>
+          <span>بک‌آپ امن</span>
         </button>
       </div>
 
@@ -160,10 +174,44 @@
 
       <!-- Quick Action Buttons -->
       <div class="flex items-center gap-3">
+        <!-- RBAC Role Switcher Badge -->
+        <div id="rbac-role-container" class="relative">
+          <button onclick="App.toggleRoleDropdown()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/70 text-xs font-semibold text-slate-200 transition" title="تغییر نقش کاربری">
+            <i data-lucide="shield" class="w-3.5 h-3.5 text-blue-400"></i>
+            <span id="current-role-label">مدیر ارشد</span>
+            <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
+          </button>
+          <div id="role-dropdown-menu" class="hidden absolute left-0 mt-2 w-52 rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-2xl py-1.5 z-50">
+            <button onclick="App.switchRole('admin')" class="w-full text-right px-3 py-2 text-xs hover:bg-slate-800 flex items-center justify-between text-slate-200 transition">
+              <span>مدیر ارشد (علی رمضانزاده)</span>
+              <span id="role-check-admin" class="text-blue-400 font-bold">✓</span>
+            </button>
+            <button onclick="App.switchRole('operator')" class="w-full text-right px-3 py-2 text-xs hover:bg-slate-800 flex items-center justify-between text-slate-200 transition">
+              <span>اپراتور سامانه</span>
+              <span id="role-check-operator" class="hidden text-blue-400 font-bold">✓</span>
+            </button>
+            <button onclick="App.switchRole('auditor')" class="w-full text-right px-3 py-2 text-xs hover:bg-slate-800 flex items-center justify-between text-slate-200 transition">
+              <span>ناظر و حسابرس مالی</span>
+              <span id="role-check-auditor" class="hidden text-blue-400 font-bold">✓</span>
+            </button>
+          </div>
+        </div>
+
         <div id="backend-status-badge" onclick="App.openBridgeSettingsModal()" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-700/50 text-xs font-mono cursor-pointer hover:border-blue-500/50 transition" title="تنظیمات پل ارتباطی هوشمند">
           <span class="w-2 h-2 rounded-full bg-amber-400"></span>
           <span class="text-slate-300">موتور هوشمند فعال</span>
         </div>
+
+        <!-- PWA Status & Install Indicator -->
+        <div id="pwa-status-pill" class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="pwa-status-text">برخط (PWA)</span>
+        </div>
+
+        <button id="pwa-install-btn" onclick="App.promptPwaInstall()" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md transition" title="نصب صیاد پرو روی دستگاه (PWA)">
+          <i data-lucide="download-cloud" class="w-3.5 h-3.5"></i>
+          <span>نصب برنامه</span>
+        </button>
 
         <button onclick="App.openBulkInquiryModal()" class="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-2xl text-sm font-bold flex items-center gap-2 shadow-lg transition">
           <i data-lucide="zap" class="w-4 h-4 text-amber-300 animate-pulse"></i>
@@ -239,6 +287,97 @@
             <div class="font-mono text-slate-400 font-bold flex items-center gap-1">
               <i data-lucide="timer" class="w-3.5 h-3.5 text-blue-400"></i>
               <span id="scheduler-countdown-display">غیرفعال</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Near-Maturity Cheque Urgent Alerts Banner (Phase 4) -->
+        <div id="near-maturity-alert-container" class="glass-card p-4 border border-rose-500/30 bg-gradient-to-l from-rose-950/30 via-slate-900/40 to-slate-900/40 hidden">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <div class="flex items-center gap-2 text-rose-400 font-bold text-sm">
+              <span class="relative flex h-3 w-3">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+              </span>
+              <i data-lucide="bell-ring" class="w-4 h-4"></i>
+              <span>هشدار فوری: چک‌های با سررسید کمتر از ۷ روز آینده (<span id="near-maturity-alert-count">۰</span> فقره)</span>
+            </div>
+            <button onclick="App.drilldownCheques('near-maturity')" class="text-xs text-rose-300 hover:text-white font-medium hover:underline flex items-center gap-1">
+              مشاهده تفکیکی سررسیدهای نزدیک <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+          <div id="near-maturity-alert-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <!-- Dynamically populated by app.js -->
+          </div>
+        </div>
+
+        <!-- Risk-Weighted Predictive Cash Flow Widget (Phase 4) -->
+        <div class="glass-card p-6 border border-sky-500/30 bg-slate-900/50 relative overflow-hidden space-y-5">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
+                <i data-lucide="trending-up" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                  پیش‌بینی هوشمند جریان نقدینگی سبد چک‌ها
+                  <span class="text-[11px] px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-300 border border-sky-500/30 font-mono font-normal">Risk-Weighted Cash Flow</span>
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">محاسبه بر اساس ضرایب احتمال وصول استعلام رنگی بانک مرکزی (سفید: ۱۰۰٪، زرد: ۸۵٪، نارنجی: ۶۰٪، قرمز/قهوه‌ای: ۲۰٪)</p>
+              </div>
+            </div>
+
+            <!-- Horizon Tabs (30 / 60 / 90 Days) -->
+            <div class="inline-flex rounded-xl bg-slate-800/80 p-1 border border-slate-700/60 text-xs">
+              <button onclick="App.setCashFlowHorizon(30)" id="cf-tab-30" class="px-3 py-1.5 rounded-lg font-bold transition bg-sky-600 text-white shadow">۳۰ روزه</button>
+              <button onclick="App.setCashFlowHorizon(60)" id="cf-tab-60" class="px-3 py-1.5 rounded-lg font-bold transition text-slate-400 hover:text-slate-200">۶۰ روزه</button>
+              <button onclick="App.setCashFlowHorizon(90)" id="cf-tab-90" class="px-3 py-1.5 rounded-lg font-bold transition text-slate-400 hover:text-slate-200">۹۰ روزه</button>
+            </div>
+          </div>
+
+          <!-- Metrics Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Metric 1: Nominal Cash Flow -->
+            <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-700/50">
+              <div class="text-xs text-slate-400 font-semibold mb-1">نقدینگی اسمی کل (Nominal)</div>
+              <div id="cf-nominal-amount" class="text-xl font-black font-mono text-slate-100">۰ <span class="text-xs font-normal text-slate-400">ریال</span></div>
+              <div id="cf-cheques-count" class="text-xs text-slate-400 mt-1">۰ فقره چک سررسید</div>
+            </div>
+
+            <!-- Metric 2: Realizable Cash Flow -->
+            <div class="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
+              <div class="text-xs text-emerald-400 font-semibold mb-1">نقدینگی انتظاری محقق‌شونده</div>
+              <div id="cf-realizable-amount" class="text-xl font-black font-mono text-emerald-300">۰ <span class="text-xs font-normal text-emerald-500">ریال</span></div>
+              <div id="cf-realization-rate" class="text-xs text-emerald-400 font-bold mt-1">نرخ وصول انتظاری: ۰٪</div>
+            </div>
+
+            <!-- Metric 3: Potential Shortfall Alert -->
+            <div class="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30">
+              <div class="text-xs text-rose-400 font-semibold mb-1">کسری احتمالی عدم وصول (Shortfall)</div>
+              <div id="cf-shortfall-amount" class="text-xl font-black font-mono text-rose-400">۰ <span class="text-xs font-normal text-rose-500">ریال</span></div>
+              <div class="text-xs text-rose-400/80 mt-1">ریسک ناشی از چک‌های پرخطر</div>
+            </div>
+
+            <!-- Metric 4: Overdue Past Cheques -->
+            <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30">
+              <div class="text-xs text-amber-400 font-semibold mb-1">چک‌های سررسید گذشته (معوق)</div>
+              <div id="cf-overdue-amount" class="text-xl font-black font-mono text-amber-300">۰ <span class="text-xs font-normal text-amber-500">ریال</span></div>
+              <div id="cf-overdue-count" class="text-xs text-amber-400 mt-1">۰ فقره نیازمند پیگیری فوری</div>
+            </div>
+          </div>
+
+          <!-- Visual Progress Bar Comparison -->
+          <div class="space-y-2 pt-2 border-t border-slate-700/40">
+            <div class="flex items-center justify-between text-xs text-slate-300">
+              <span class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                <span>سهم نقدینگی محقق‌شونده از کل مبلغ</span>
+              </span>
+              <span id="cf-progress-percentage" class="font-mono font-bold text-emerald-400">۰٪</span>
+            </div>
+            <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden flex">
+              <div id="cf-progress-bar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-500" style="width: 0%"></div>
+              <div id="cf-shortfall-bar" class="bg-rose-500/50 h-full transition-all duration-500" style="width: 0%"></div>
             </div>
           </div>
         </div>
@@ -432,6 +571,7 @@
                   <th class="py-3.5 px-4">نام کامل مشتری</th>
                   <th class="py-3.5 px-4">کد ملی</th>
                   <th class="py-3.5 px-4 text-center">وضعیت اعتباری بانک مرکزی</th>
+                  <th class="py-3.5 px-4 text-center">شاخص سلامت مالی FHS</th>
                   <th class="py-3.5 px-4 text-center">تعداد چک‌ها</th>
                   <th class="py-3.5 px-4 text-left">مجموع مبالغ</th>
                   <th class="py-3.5 px-4 text-center">عملیات</th>
@@ -439,6 +579,158 @@
               </thead>
               <tbody id="customers-table-body" class="divide-y divide-slate-700/30">
                 <!-- Dynamically loaded -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════════════════════════════════════════════════════
+           TAB: 2D Fintech Risk Matrix View (Phase 4)
+           ═════════════════════════════════════════════════════════════ -->
+      <section id="view-risk-matrix" class="tab-view hidden space-y-6">
+        <!-- Header & Overview -->
+        <div class="glass-card p-6 border border-amber-500/20 bg-gradient-to-l from-amber-600/10 via-slate-900/60 to-transparent flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-4">
+            <div class="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-xl">
+              <i data-lucide="layout-grid" class="w-7 h-7"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2.5">
+                <h2 class="text-xl font-black text-slate-100">ماتریس ریسک و تفکیک ۲ بعدی مشتریان</h2>
+                <span class="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">2D Risk Matrix</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-1">دسته‌بندی استراتژیک پرتفوی مشتریان در ۴ ناحیه گرید بر اساس دو بعد «سلامت مالی FHS» و «حجم تعهدات ریالی»</p>
+            </div>
+          </div>
+
+          <!-- Action buttons -->
+          <div class="flex items-center gap-2.5">
+            <button onclick="App.exportRiskMatrixExcel()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-2 transition">
+              <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-400"></i>
+              <span>خروجی اکسل ماتریس</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 Quadrants Interactive Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <!-- Quadrant 1: Stars (Low Risk, High Volume) -->
+          <div onclick="App.filterRiskMatrixQuadrant('stars')" class="glass-card cursor-pointer p-5 border border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 transition group">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2.5">
+                <span class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono">Q1</span>
+                <div>
+                  <h4 class="font-bold text-emerald-300 text-sm">ستاره‌ها و مشتریان طلایی</h4>
+                  <p class="text-[11px] text-slate-400">کم‌ریسک و پرتراکنش (ستون‌های سودآوری صندوق)</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span id="rm-count-stars" class="text-2xl font-black font-mono text-emerald-400">۰</span>
+                <span class="text-xs text-slate-400 block">مشتری</span>
+              </div>
+            </div>
+            <div class="pt-3 border-t border-slate-700/30 flex items-center justify-between text-xs">
+              <span class="text-slate-400">مجموع تعهدات:</span>
+              <span id="rm-amount-stars" class="font-mono font-bold text-emerald-300">۰ ریال</span>
+            </div>
+          </div>
+
+          <!-- Quadrant 2: Opportunities (Low Risk, Low Volume) -->
+          <div onclick="App.filterRiskMatrixQuadrant('opportunities')" class="glass-card cursor-pointer p-5 border border-blue-500/40 bg-blue-500/5 hover:bg-blue-500/10 transition group">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2.5">
+                <span class="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold font-mono">Q2</span>
+                <div>
+                  <h4 class="font-bold text-blue-300 text-sm">عادی و فرصت‌های رشد</h4>
+                  <p class="text-[11px] text-slate-400">کم‌ریسک و کم‌تراکنش (اعتبار پاک و فرصت توسعه)</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span id="rm-count-opportunities" class="text-2xl font-black font-mono text-blue-400">۰</span>
+                <span class="text-xs text-slate-400 block">مشتری</span>
+              </div>
+            </div>
+            <div class="pt-3 border-t border-slate-700/30 flex items-center justify-between text-xs">
+              <span class="text-slate-400">مجموع تعهدات:</span>
+              <span id="rm-amount-opportunities" class="font-mono font-bold text-blue-300">۰ ریال</span>
+            </div>
+          </div>
+
+          <!-- Quadrant 3: Watchlist (High Risk, Low Volume) -->
+          <div onclick="App.filterRiskMatrixQuadrant('watchlist')" class="glass-card cursor-pointer p-5 border border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10 transition group">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2.5">
+                <span class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold font-mono">Q3</span>
+                <div>
+                  <h4 class="font-bold text-amber-300 text-sm">تحت نظر (مبالغ خرد)</h4>
+                  <p class="text-[11px] text-slate-400">پرریسک با مبالغ خرد (نیازمند تسویه و نظارت)</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span id="rm-count-watchlist" class="text-2xl font-black font-mono text-amber-400">۰</span>
+                <span class="text-xs text-slate-400 block">مشتری</span>
+              </div>
+            </div>
+            <div class="pt-3 border-t border-slate-700/30 flex items-center justify-between text-xs">
+              <span class="text-slate-400">مجموع تعهدات:</span>
+              <span id="rm-amount-watchlist" class="font-mono font-bold text-amber-300">۰ ریال</span>
+            </div>
+          </div>
+
+          <!-- Quadrant 4: Critical (High Risk, High Volume) -->
+          <div onclick="App.filterRiskMatrixQuadrant('critical')" class="glass-card cursor-pointer p-5 border border-rose-500/50 bg-rose-500/10 hover:bg-rose-500/15 transition group">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2.5">
+                <span class="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold font-mono">Q4</span>
+                <div>
+                  <h4 class="font-bold text-rose-400 text-sm">هشدار قرمز و بحرانی</h4>
+                  <p class="text-[11px] text-slate-400">پرریسک با تعهدات سنگین (بالاترین سطح ریسک نکول)</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span id="rm-count-critical" class="text-2xl font-black font-mono text-rose-400">۰</span>
+                <span class="text-xs text-slate-400 block">مشتری</span>
+              </div>
+            </div>
+            <div class="pt-3 border-t border-slate-700/30 flex items-center justify-between text-xs">
+              <span class="text-slate-400">مجموع تعهدات:</span>
+              <span id="rm-amount-critical" class="font-mono font-bold text-rose-400">۰ ریال</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quadrant Filter Chips & Search -->
+        <div class="glass-card p-4 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2 flex-wrap text-xs">
+            <span class="text-slate-400 font-semibold ml-1">ناحیه انتخابی:</span>
+            <button onclick="App.filterRiskMatrixQuadrant('all')" id="rm-btn-all" class="px-3 py-1.5 rounded-xl font-bold transition bg-blue-600 text-white shadow">همه مشتریان</button>
+            <button onclick="App.filterRiskMatrixQuadrant('stars')" id="rm-btn-stars" class="px-3 py-1.5 rounded-xl font-bold transition bg-slate-800 text-slate-300 hover:text-white">ستاره‌ها (Q1)</button>
+            <button onclick="App.filterRiskMatrixQuadrant('opportunities')" id="rm-btn-opportunities" class="px-3 py-1.5 rounded-xl font-bold transition bg-slate-800 text-slate-300 hover:text-white">فرصت‌ها (Q2)</button>
+            <button onclick="App.filterRiskMatrixQuadrant('watchlist')" id="rm-btn-watchlist" class="px-3 py-1.5 rounded-xl font-bold transition bg-slate-800 text-slate-300 hover:text-white">تحت نظر (Q3)</button>
+            <button onclick="App.filterRiskMatrixQuadrant('critical')" id="rm-btn-critical" class="px-3 py-1.5 rounded-xl font-bold transition bg-slate-800 text-slate-300 hover:text-white">هشدار قرمز (Q4)</button>
+          </div>
+          <div class="text-xs text-slate-400" id="rm-filter-count-badge">نمایش کل ۵۲ مشتری</div>
+        </div>
+
+        <!-- Customers Table for Risk Matrix -->
+        <div class="glass-card overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-right text-sm">
+              <thead class="bg-slate-900/60 text-slate-400 text-xs border-b border-slate-700/60">
+                <tr>
+                  <th class="py-3.5 px-4 w-12">#</th>
+                  <th class="py-3.5 px-4">نام مشتری</th>
+                  <th class="py-3.5 px-4 text-center">ناحیه ماتریس</th>
+                  <th class="py-3.5 px-4 text-center">شاخص سلامت مالی FHS</th>
+                  <th class="py-3.5 px-4 text-center">رتبه اعتباری بانک مرکزی</th>
+                  <th class="py-3.5 px-4 text-left">مجموع تعهدات</th>
+                  <th class="py-3.5 px-4 text-center">سوابق برگشتی</th>
+                  <th class="py-3.5 px-4 text-center">عملیات</th>
+                </tr>
+              </thead>
+              <tbody id="risk-matrix-table-body" class="divide-y divide-slate-700/30">
+                <!-- Dynamically populated by app.js -->
               </tbody>
             </table>
           </div>
@@ -1318,6 +1610,73 @@
           <button onclick="App.closeBridgeSettingsModal()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-semibold transition">بستن</button>
           <button onclick="App.saveBridgeSettings()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-xs font-bold shadow-lg transition">ذخیره آدرس</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       🛡️ Encrypted Backup Vault Modal
+       ───────────────────────────────────────────────────────────── -->
+  <div id="backup-vault-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-3xl rounded-3xl p-6 shadow-2xl border border-slate-700/80 bg-slate-900/95 max-h-[90vh] flex flex-col">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-4 border-b border-slate-700/60 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+            <i data-lucide="shield-check" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-base text-slate-100">مخزن پشتیبان‌های رمزنگاری‌شده (Backup Vault)</h3>
+            <p class="text-xs text-slate-400">رمزنگاری متقارن Fernet AES-256 + فشرده‌سازی Gzip + متد صفر-قطعی SQLite</p>
+          </div>
+        </div>
+        <button onclick="App.closeBackupModal()" class="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Action & Creation Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-3 py-4 border-b border-slate-700/40 shrink-0">
+        <div class="flex items-center gap-2">
+          <input id="backup-tag-input" type="text" placeholder="برچسب پشتیبان (اختیاری)..." class="rounded-xl px-3 py-1.5 text-xs bg-slate-800 border border-slate-700 text-slate-200 focus:outline-none focus:border-blue-500 w-44">
+          <button id="btn-create-backup" onclick="App.createBackupFromModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg transition">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>ایجاد پشتیبان جدید</span>
+          </button>
+        </div>
+        <button onclick="App.refreshBackupList()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          <span>به‌روزرسانی لیست</span>
+        </button>
+      </div>
+
+      <!-- Backups Table List -->
+      <div class="flex-1 overflow-y-auto py-3">
+        <div class="rounded-2xl border border-slate-700/60 overflow-hidden">
+          <table class="w-full text-right text-xs">
+            <thead class="bg-slate-800/80 text-slate-300 border-b border-slate-700/60">
+              <tr>
+                <th class="py-2.5 px-3">نام فایل و تگ</th>
+                <th class="py-2.5 px-3">تاریخ ایجاد (شمسی)</th>
+                <th class="py-2.5 px-3">حجم رمزنگاری‌شده</th>
+                <th class="py-2.5 px-3 text-center">امنیت</th>
+                <th class="py-2.5 px-3 text-center">عملیات</th>
+              </tr>
+            </thead>
+            <tbody id="backup-table-body" class="divide-y divide-slate-800 text-slate-300">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+        <div id="backup-empty-notice" class="hidden text-center py-8 text-slate-400 text-xs">
+          هنوز هیچ فایل پشتیبانی ثبت نشده است.
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="pt-3 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+        <span>سیاست نگهداشت خودکار: نگهداری ۷ نسخه روزانه و ۴ نسخه هفتگی</span>
+        <button onclick="App.closeBackupModal()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition">بستن</button>
       </div>
     </div>
   </div>

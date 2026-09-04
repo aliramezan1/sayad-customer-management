@@ -29,11 +29,13 @@ const App = {
   async init() {
     window.AppLogger.info('SYSTEM', 'در حال راه‌اندازی سامانه صیاد پرو وب...');
     await this.loadData();
+    await this.initRole();
     this.restoreLastBatchResults();
     this.populateHolderDropdowns();
     this.renderHoldersList();
     this.setupEventListeners();
     this.initSchedulerUI();
+    this.initPWA();
     this.renderCurrentView();
     
     // Listen to logs to update log badges
@@ -234,6 +236,195 @@ const App = {
   },
 
   // ─────────────────────────────────────────────────────────────
+  // 🛡️ RBAC Role Management
+  // ─────────────────────────────────────────────────────────────
+  async initRole() {
+    try {
+      const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendUrl}/api/auth/current-role`);
+      if (res.ok) {
+        const data = await res.json();
+        this.updateRoleUI(data.role, data.title);
+      }
+    } catch (e) {
+      console.warn('Could not fetch current role:', e);
+    }
+  },
+
+  toggleRoleDropdown() {
+    const menu = document.getElementById('role-dropdown-menu');
+    if (menu) menu.classList.toggle('hidden');
+  },
+
+  async switchRole(role) {
+    try {
+      const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendUrl}/api/auth/switch-role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: role })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        this.updateRoleUI(data.current_role, data.role_info.title);
+        this.showToast(data.message, 'success');
+      } else {
+        const err = await res.json();
+        this.showToast(err.detail || 'خطا در تغییر نقش', 'error');
+      }
+    } catch (e) {
+      this.showToast('خطا در ارتباط با سرور جهت تغییر نقش', 'error');
+    }
+    const menu = document.getElementById('role-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+  },
+
+  updateRoleUI(role, title) {
+    this.state.currentRole = role;
+    const label = document.getElementById('current-role-label');
+    if (label) {
+      if (role === 'admin') label.textContent = 'مدیر ارشد';
+      else if (role === 'operator') label.textContent = 'اپراتور';
+      else if (role === 'auditor') label.textContent = 'ناظر/حسابرس';
+      else label.textContent = title || role;
+    }
+    ['admin', 'operator', 'auditor'].forEach(r => {
+      const el = document.getElementById(`role-check-${r}`);
+      if (el) {
+        if (r === role) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+      }
+    });
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // 🛡️ Encrypted Backup Vault Management
+  // ─────────────────────────────────────────────────────────────
+  async openBackupModal() {
+    const modal = document.getElementById('backup-vault-modal');
+    if (modal) modal.classList.remove('hidden');
+    await this.refreshBackupList();
+  },
+
+  closeBackupModal() {
+    const modal = document.getElementById('backup-vault-modal');
+    if (modal) modal.classList.add('hidden');
+  },
+
+  async refreshBackupList() {
+    const tbody = document.getElementById('backup-table-body');
+    const emptyNotice = document.getElementById('backup-empty-notice');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-slate-400">در حال دریافت لیست پشتیبان‌ها...</td></tr>';
+
+    try {
+      const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendUrl}/api/backup/list`);
+      if (res.ok) {
+        const data = await res.json();
+        const backups = data.backups || [];
+        if (backups.length === 0) {
+          tbody.innerHTML = '';
+          if (emptyNotice) emptyNotice.classList.remove('hidden');
+          return;
+        }
+        if (emptyNotice) emptyNotice.classList.add('hidden');
+
+        tbody.innerHTML = backups.map(b => `
+          <tr class="hover:bg-slate-800/50 transition">
+            <td class="py-2.5 px-3">
+              <div class="font-mono text-sky-400 font-bold text-xs">${this.escapeHtml(b.filename)}</div>
+              <div class="text-[10px] text-slate-400 mt-0.5">تگ: <span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">${this.escapeHtml(b.tag || 'manual')}</span> ${b.is_emergency ? '<span class="text-amber-400 font-semibold">(اسنپ‌شات اضطراری)</span>' : ''}</div>
+            </td>
+            <td class="py-2.5 px-3 font-mono text-[11px] text-slate-300">${b.jalali_created_at || b.created_at}</td>
+            <td class="py-2.5 px-3 font-mono text-emerald-400 font-semibold text-xs">${b.formatted_size}</td>
+            <td class="py-2.5 px-3 text-center">
+              <span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono inline-flex items-center gap-1">
+                <i data-lucide="lock" class="w-2.5 h-2.5"></i> AES-256
+              </span>
+            </td>
+            <td class="py-2.5 px-3 text-center">
+              <div class="flex items-center justify-center gap-1.5">
+                <a href="${backendUrl}/api/backup/download/${b.filename}" download class="p-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 hover:text-white rounded-lg transition" title="دانلود نسخه رمزنگاری‌شده">
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                </a>
+                <button onclick="App.restoreBackup('${b.filename}')" class="p-1.5 bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white rounded-lg transition" title="بازیابی دیتابیس (فقط مدیر)">
+                  <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+
+        if (window.lucide) lucide.createIcons();
+      }
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-rose-400">خطا در بارگذاری مخزن پشتیبان‌ها.</td></tr>';
+    }
+  },
+
+  async createBackupFromModal() {
+    const tagInput = document.getElementById('backup-tag-input');
+    const tag = (tagInput && tagInput.value.trim()) || 'manual';
+    const btn = document.getElementById('btn-create-backup');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>در حال رمزنگاری...</span>';
+    }
+
+    try {
+      const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendUrl}/api/backup/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: tag })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        this.showToast('پشتیبان‌گیری رمزنگاری‌شده با موفقیت ایجاد شد.', 'success');
+        if (tagInput) tagInput.value = '';
+        await this.refreshBackupList();
+      } else {
+        const err = await res.json();
+        this.showToast(err.detail || 'خطا در ایجاد پشتیبان', 'error');
+      }
+    } catch (e) {
+      this.showToast('خطا در برقراری ارتباط با سرور پشتیبان', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i><span>ایجاد پشتیبان جدید</span>';
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+  },
+
+  async restoreBackup(filename) {
+    if (!confirm(`هشدار امنیتی:\nآیا از بازیابی پایگاه داده از فایل '${filename}' اطمینان دارید؟\nیک اسنپ‌شات اضطراری از داده‌های فعلی به صورت خودکار ایجاد خواهد شد.`)) {
+      return;
+    }
+
+    try {
+      const backendUrl = (window.PasargadInquiryEngine && window.PasargadInquiryEngine.getSavedBackendUrl()) || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendUrl}/api/backup/restore/${filename}`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        this.showToast(data.message || 'پایگاه داده با موفقیت بازیابی گردید.', 'success');
+        await this.syncData();
+        await this.refreshBackupList();
+      } else {
+        const err = await res.json();
+        this.showToast(err.detail || 'خطا در بازیابی پایگاه داده', 'error');
+      }
+    } catch (e) {
+      this.showToast('خطا در درخواست بازیابی پایگاه داده', 'error');
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
   // 📊 Live Statistics Calculation
   // ─────────────────────────────────────────────────────────────
   getStats() {
@@ -336,6 +527,8 @@ const App = {
       this.renderDashboard();
     } else if (this.state.currentTab === 'customers') {
       this.renderCustomersTable();
+    } else if (this.state.currentTab === 'risk-matrix') {
+      this.renderRiskMatrix();
     } else if (this.state.currentTab === 'cheques') {
       this.renderChequesTable();
     } else if (this.state.currentTab === 'logs') {
@@ -355,6 +548,10 @@ const App = {
 
     this.renderColorChart(s.creditColors);
     this.renderHoldersList();
+
+    // Phase 4: Financial Intelligence & Alerts
+    this.loadPredictiveCashFlow();
+    this.loadNearMaturityAlerts();
   },
 
   renderColorChart(colorCounts) {
@@ -518,7 +715,7 @@ const App = {
     if (list.length === 0) {
       container.innerHTML = `
         <tr>
-          <td colspan="7" class="text-center py-12 text-slate-400">
+          <td colspan="8" class="text-center py-12 text-slate-400">
             <i data-lucide="users" class="w-12 h-12 mx-auto mb-3 opacity-40"></i>
             هیچ مشتری با مشخصات فیلتر فعلی یافت نشد.
           </td>
@@ -562,6 +759,9 @@ const App = {
           <td class="py-4 px-4 text-sm font-mono text-slate-300">${c.national_id || '---'}</td>
           <td class="py-4 px-4 text-center">
             ${this.renderCreditBadge(c.credit_color)}
+          </td>
+          <td class="py-4 px-4 text-center">
+            ${this.renderFHSBadge(c)}
           </td>
           <td class="py-4 px-4 text-center font-mono font-bold text-blue-400">
             ${(cheques.length).toLocaleString('fa-IR')} فقره
@@ -641,6 +841,21 @@ const App = {
           <div class="flex items-center gap-2 text-rose-400 text-sm font-semibold">
             <i data-lucide="alert-triangle" class="w-4 h-4"></i>
             هشدار: نمایش چک‌های دارای سوءاثر و برگشتی (${list.length} فقره)
+          </div>
+          <button onclick="App.switchTab('cheques', 'all')" class="text-xs text-rose-300 hover:underline">نمایش تمام چک‌ها</button>
+        </div>`;
+      filterBanner.classList.remove('hidden');
+    } else if (mode === 'near-maturity') {
+      list = list.filter(ch => {
+        const days = this.calculateDaysUntilDue(ch.cheque_date);
+        return days !== null && days >= 0 && days <= 7;
+      });
+      list.sort((a, b) => (this.calculateDaysUntilDue(a.cheque_date) || 999) - (this.calculateDaysUntilDue(b.cheque_date) || 999));
+      filterBanner.innerHTML = `
+        <div class="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center justify-between">
+          <div class="flex items-center gap-2 text-rose-400 text-sm font-semibold">
+            <i data-lucide="bell-ring" class="w-4 h-4"></i>
+            هشدار: نمایش چک‌های با سررسید کمتر از ۷ روز آینده (${list.length} فقره)
           </div>
           <button onclick="App.switchTab('cheques', 'all')" class="text-xs text-rose-300 hover:underline">نمایش تمام چک‌ها</button>
         </div>`;
@@ -733,9 +948,36 @@ const App = {
   // ─────────────────────────────────────────────────────────────
   // 🪟 Customer Profile Modal
   // ─────────────────────────────────────────────────────────────
-  viewCustomerProfile(customerId) {
+  async viewCustomerProfile(customerId) {
     const c = this.state.customers.find(cust => cust.id === customerId);
     if (!c) return;
+
+    let fhs = null;
+    try {
+      const res = await fetch(`/api/analytics/customer-fhs/${customerId}`, { credentials: 'omit' });
+      if (res.ok) {
+        fhs = await res.json();
+      }
+    } catch (e) {
+      console.warn('Could not fetch FHS analytics for profile:', e);
+    }
+
+    if (!fhs) {
+      fhs = {
+        fhs_score: c.fhs_score || 50,
+        level: c.fhs_level || 'متوسط',
+        color: c.fhs_color || '#f59e0b',
+        bg_class: c.fhs_bg_class || 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+        recommendation: 'بررسی تکمیلی وضعیت اعتباری و وصول چک‌ها توصیه می‌شود.',
+        factors: {
+          cbi_score: 60,
+          cbi_component: 36,
+          cleared_component: 15,
+          commitment_component: 10,
+          bounced_penalty: 0
+        }
+      };
+    }
 
     const cheques = this.getCustomerCheques(customerId);
     const totalAmount = cheques.reduce((s, ch) => s + (parseFloat(ch.amount) || 0), 0);
@@ -760,6 +1002,7 @@ const App = {
             <div class="flex items-center gap-3">
               <h2 class="text-2xl font-bold text-slate-100">${c.full_name}</h2>
               ${this.renderCreditBadge(c.credit_color)}
+              ${this.renderFHSBadge(c)}
             </div>
             <div class="text-sm text-slate-400 mt-1 flex items-center gap-4">
               <span>کدملی: <strong class="font-mono text-slate-200">${c.national_id || 'ثبت نشده'}</strong></span>
@@ -801,6 +1044,79 @@ const App = {
         <div class="glass-card p-4 border border-rose-500/20 bg-rose-500/5">
           <div class="text-xs text-rose-400 font-semibold mb-1">چک‌های برگشتی (پاسارگاد)</div>
           <div class="text-xl font-bold font-mono text-rose-300">${this.formatMoney(bouncedSum)} <span class="text-xs font-normal text-slate-400">ریال</span></div>
+        </div>
+      </div>
+
+      <!-- FHS Intelligence Card (Phase 4) -->
+      <div class="p-6 bg-slate-900/70 border-b border-slate-700/60">
+        <div class="glass-card p-5 border border-sky-500/30 bg-gradient-to-l from-sky-950/30 via-slate-900/60 to-slate-900/40 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-2xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400 shadow-md">
+                <i data-lucide="activity" class="w-6 h-6"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-base font-bold text-slate-100">کارنامه هوش مالی و سلامت اعتباری (FHS)</h3>
+                  <span class="px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold border ${fhs.bg_class}">${fhs.fhs_score} از ۱۰۰ (${fhs.level})</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-0.5">تحلیل وزندار فینتک: رتبه اعتباری بانک مرکزی، نرخ وصول، توازن تعهدات و جریمه برگشتی</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs text-slate-400">رتبه اعتباری بانک مرکزی:</div>
+              <div class="text-sm font-bold text-slate-200">${c.credit_color || 'نامشخص'} (${fhs.factors.cbi_score || 0} نمره)</div>
+            </div>
+          </div>
+
+          <!-- Factor Progress Bars -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            <div class="p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              <div class="text-slate-400 mb-1 flex justify-between">
+                <span>رتبه بانک مرکزی:</span>
+                <strong class="font-mono text-sky-400">${fhs.factors.cbi_component || 0} / ۶۰</strong>
+              </div>
+              <div class="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                <div class="bg-sky-500 h-full" style="width: ${Math.min(100, (fhs.factors.cbi_component || 0) / 60 * 100)}%"></div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              <div class="text-slate-400 mb-1 flex justify-between">
+                <span>نرخ وصول چک‌ها:</span>
+                <strong class="font-mono text-emerald-400">${fhs.factors.cleared_component || 0} / ۲۵</strong>
+              </div>
+              <div class="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                <div class="bg-emerald-500 h-full" style="width: ${Math.min(100, (fhs.factors.cleared_component || 0) / 25 * 100)}%"></div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              <div class="text-slate-400 mb-1 flex justify-between">
+                <span>توازن تعهدات:</span>
+                <strong class="font-mono text-blue-400">${fhs.factors.commitment_component || 0} / ۱۵</strong>
+              </div>
+              <div class="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                <div class="bg-blue-500 h-full" style="width: ${Math.min(100, (fhs.factors.commitment_component || 0) / 15 * 100)}%"></div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              <div class="text-slate-400 mb-1 flex justify-between">
+                <span>جریمه چک برگشتی:</span>
+                <strong class="font-mono text-rose-400">-${fhs.factors.bounced_penalty || 0} / ۴۰</strong>
+              </div>
+              <div class="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                <div class="bg-rose-500 h-full" style="width: ${Math.min(100, (fhs.factors.bounced_penalty || 0) / 40 * 100)}%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recommendation box -->
+          <div class="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 flex items-center gap-2 text-xs text-slate-300">
+            <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400 shrink-0"></i>
+            <span><strong>توصیه هوش مالی:</strong> ${fhs.recommendation}</span>
+          </div>
         </div>
       </div>
 
@@ -3663,6 +3979,502 @@ const App = {
         this.toggleMobileSidebar(false);
       }
     });
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // 🔷 Phase 4: Fintech Intelligence, Risk Matrix & PWA UX Methods
+  // ─────────────────────────────────────────────────────────────
+
+  renderFHSBadge(c) {
+    const score = (c.fhs_score !== undefined && c.fhs_score !== null) ? Math.round(c.fhs_score) : null;
+    const level = c.fhs_level || 'نامشخص';
+    if (score === null) {
+      return `<span class="px-2.5 py-1 rounded-xl text-xs font-mono bg-slate-800 text-slate-400 border border-slate-700">---</span>`;
+    }
+    let bgClass = 'bg-slate-800 text-slate-300 border-slate-700';
+    if (score >= 85) {
+      bgClass = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 shadow-sm';
+    } else if (score >= 70) {
+      bgClass = 'bg-blue-500/15 text-blue-300 border-blue-500/40 shadow-sm';
+    } else if (score >= 50) {
+      bgClass = 'bg-amber-500/15 text-amber-300 border-amber-500/40 shadow-sm';
+    } else {
+      bgClass = 'bg-rose-500/15 text-rose-300 border-rose-500/40 shadow-sm';
+    }
+    return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold font-mono border ${bgClass}" title="شاخص سلامت مالی مشتری (FHS: Financial Health Score)">
+      <span>${score}</span>
+      <span class="text-[10px] font-sans font-normal opacity-90">(${level})</span>
+    </span>`;
+  },
+
+  jalaliToGregorian(jy, jm, jd) {
+    jy += 1595;
+    let days = -355668 + (365 * jy) + Math.floor(jy / 33) * 8 + Math.floor(((jy % 33) + 3) / 4) + jd + (jm < 7 ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
+    let gy = 400 * Math.floor(days / 146097);
+    days %= 146097;
+    if (days > 36524) {
+      days -= 1;
+      gy += 100 * Math.floor(days / 36524);
+      days %= 36524;
+      if (days >= 365) days += 1;
+    }
+    gy += 4 * Math.floor(days / 1461);
+    days %= 1461;
+    if (days > 365) {
+      gy += Math.floor((days - 1) / 365);
+      days = (days - 1) % 365;
+    }
+    let gd = days + 1;
+    const salA = [0, 31, ((gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let gm = 0;
+    while (gm < 13 && gd > salA[gm]) {
+      gd -= salA[gm];
+      gm += 1;
+    }
+    return [gy, gm, gd];
+  },
+
+  calculateDaysUntilDue(chequeDateStr) {
+    if (!chequeDateStr) return null;
+    const s = String(chequeDateStr).replace(/[^0-9]/g, '');
+    if (s.length !== 8) return null;
+    try {
+      const jy = parseInt(s.slice(0, 4), 10);
+      const jm = parseInt(s.slice(4, 6), 10);
+      const jd = parseInt(s.slice(6, 8), 10);
+      const [gy, gm, gd] = this.jalaliToGregorian(jy, jm, jd);
+      const dueDate = new Date(gy, gm - 1, gd);
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const diffMs = dueDate.getTime() - today.getTime();
+      return Math.round(diffMs / (1000 * 60 * 60 * 24));
+    } catch (e) {
+      return null;
+    }
+  },
+
+  drilldownCheques(mode) {
+    this.switchTab('cheques', mode);
+  },
+
+  currentCashFlowHorizon: 30,
+  cashFlowData: null,
+
+  async loadPredictiveCashFlow() {
+    try {
+      const res = await fetch('/api/analytics/cash-flow?days=90', { credentials: 'omit' });
+      if (res.ok) {
+        this.cashFlowData = await res.json();
+        this.renderPredictiveCashFlow();
+      }
+    } catch (e) {
+      console.warn('Could not load predictive cash flow from API:', e);
+      this.calculateLocalCashFlowFallback();
+    }
+  },
+
+  setCashFlowHorizon(days) {
+    this.currentCashFlowHorizon = days;
+    [30, 60, 90].forEach(d => {
+      const btn = document.getElementById(`cf-tab-${d}`);
+      if (btn) {
+        if (d === days) {
+          btn.className = 'px-3 py-1.5 rounded-lg font-bold transition bg-sky-600 text-white shadow';
+        } else {
+          btn.className = 'px-3 py-1.5 rounded-lg font-bold transition text-slate-400 hover:text-slate-200';
+        }
+      }
+    });
+    this.renderPredictiveCashFlow();
+  },
+
+  renderPredictiveCashFlow() {
+    if (!this.cashFlowData || !this.cashFlowData.horizons) return;
+
+    const horizonKey = `${this.currentCashFlowHorizon}_days`;
+    const horizon = this.cashFlowData.horizons[horizonKey] || this.cashFlowData.horizons['30_days'];
+    const overdue = this.cashFlowData.horizons.overdue || { nominal: 0, count: 0 };
+
+    const nominalEl = document.getElementById('cf-nominal-amount');
+    const chequesCountEl = document.getElementById('cf-cheques-count');
+    const realizableEl = document.getElementById('cf-realizable-amount');
+    const rateEl = document.getElementById('cf-realization-rate');
+    const shortfallEl = document.getElementById('cf-shortfall-amount');
+    const overdueAmtEl = document.getElementById('cf-overdue-amount');
+    const overdueCntEl = document.getElementById('cf-overdue-count');
+    const progressPercEl = document.getElementById('cf-progress-percentage');
+    const progressBar = document.getElementById('cf-progress-bar');
+    const shortfallBar = document.getElementById('cf-shortfall-bar');
+
+    if (nominalEl) nominalEl.innerHTML = `${this.formatMoney(horizon.nominal)} <span class="text-xs font-normal text-slate-400">ریال</span>`;
+    if (chequesCountEl) chequesCountEl.innerText = `${(horizon.count || 0).toLocaleString('fa-IR')} فقره چک سررسید`;
+    if (realizableEl) realizableEl.innerHTML = `${this.formatMoney(horizon.realizable)} <span class="text-xs font-normal text-emerald-500">ریال</span>`;
+    if (rateEl) rateEl.innerText = `نرخ وصول انتظاری: ${(horizon.realization_rate || 100).toLocaleString('fa-IR')}٪`;
+    if (shortfallEl) shortfallEl.innerHTML = `${this.formatMoney(horizon.shortfall)} <span class="text-xs font-normal text-rose-500">ریال</span>`;
+    if (overdueAmtEl) overdueAmtEl.innerHTML = `${this.formatMoney(overdue.nominal)} <span class="text-xs font-normal text-amber-500">ریال</span>`;
+    if (overdueCntEl) overdueCntEl.innerText = `${(overdue.count || 0).toLocaleString('fa-IR')} فقره نیازمند پیگیری فوری`;
+
+    const pct = horizon.nominal > 0 ? Math.min(100, Math.round((horizon.realizable / horizon.nominal) * 100)) : 100;
+    const shortPct = 100 - pct;
+
+    if (progressPercEl) progressPercEl.innerText = `${pct.toLocaleString('fa-IR')}٪ محقق‌شونده`;
+    if (progressBar) progressBar.style.width = `${pct}%`;
+    if (shortfallBar) shortfallBar.style.width = `${shortPct}%`;
+  },
+
+  calculateLocalCashFlowFallback() {
+    let n30 = 0, r30 = 0, c30 = 0;
+    let n60 = 0, r60 = 0, c60 = 0;
+    let n90 = 0, r90 = 0, c90 = 0;
+    let nOverdue = 0, cOverdue = 0;
+
+    const probMap = { 'سفید': 1.0, 'سبز': 0.95, 'زرد': 0.85, 'نارنجی': 0.60, 'قرمز': 0.20, 'قهوه ای': 0.20 };
+
+    this.state.cheques.forEach(ch => {
+      const amt = parseFloat(ch.amount) || 0;
+      const days = this.calculateDaysUntilDue(ch.cheque_date);
+      const cust = this.state.customers.find(c => c.id === ch.customer_id);
+      const color = cust ? (cust.credit_color || 'نامشخص') : 'نامشخص';
+      const p = probMap[color] || 0.5;
+      const real = amt * p;
+
+      if (days !== null && days < 0) {
+        nOverdue += amt;
+        cOverdue++;
+      } else if (days !== null) {
+        if (days <= 30) { n30 += amt; r30 += real; c30++; }
+        if (days <= 60) { n60 += amt; r60 += real; c60++; }
+        if (days <= 90) { n90 += amt; r90 += real; c90++; }
+      }
+    });
+
+    this.cashFlowData = {
+      horizons: {
+        '30_days': { nominal: n30, realizable: r30, shortfall: n30 - r30, count: c30, realization_rate: n30 ? Math.round(r30/n30*100) : 100 },
+        '60_days': { nominal: n60, realizable: r60, shortfall: n60 - r60, count: c60, realization_rate: n60 ? Math.round(r60/n60*100) : 100 },
+        '90_days': { nominal: n90, realizable: r90, shortfall: n90 - r90, count: c90, realization_rate: n90 ? Math.round(r90/n90*100) : 100 },
+        'overdue': { nominal: nOverdue, count: cOverdue }
+      }
+    };
+    this.renderPredictiveCashFlow();
+  },
+
+  async loadNearMaturityAlerts() {
+    const container = document.getElementById('near-maturity-alert-container');
+    const listEl = document.getElementById('near-maturity-alert-list');
+    const countEl = document.getElementById('near-maturity-alert-count');
+    if (!container || !listEl) return;
+
+    let alerts = [];
+    try {
+      const res = await fetch('/api/analytics/alerts/near-maturity?days=7', { credentials: 'omit' });
+      if (res.ok) {
+        const data = await res.json();
+        alerts = data.alerts || [];
+      }
+    } catch (e) {
+      console.warn('Could not load near maturity alerts from API:', e);
+      alerts = this.state.cheques
+        .filter(ch => {
+          const d = this.calculateDaysUntilDue(ch.cheque_date);
+          return d !== null && d >= 0 && d <= 7;
+        })
+        .map(ch => {
+          const cust = this.state.customers.find(c => c.id === ch.customer_id);
+          const d = this.calculateDaysUntilDue(ch.cheque_date);
+          const col = cust ? (cust.credit_color || 'نامشخص') : 'نامشخص';
+          return {
+            cheque_id: ch.id,
+            customer_id: ch.customer_id,
+            customer_name: cust ? cust.full_name : 'نامشخص',
+            amount: parseFloat(ch.amount) || 0,
+            cheque_date: ch.cheque_date,
+            days_remaining: d,
+            credit_color: col,
+            priority: (col === 'قرمز' || d <= 2) ? 'critical' : (col === 'زرد' || col === 'نارنجی') ? 'warning' : 'normal',
+            priority_fa: (col === 'قرمز' || d <= 2) ? 'بحرانی' : (col === 'زرد' || col === 'نارنجی') ? 'هشدار' : 'عادی'
+          };
+        });
+    }
+
+    if (alerts.length === 0) {
+      container.classList.add('hidden');
+      return;
+    }
+
+    if (countEl) countEl.innerText = alerts.length.toLocaleString('fa-IR');
+    container.classList.remove('hidden');
+
+    listEl.innerHTML = alerts.slice(0, 6).map(a => {
+      const isCrit = a.priority === 'critical';
+      const cardBorder = isCrit ? 'border-rose-500/50 bg-rose-950/40' : 'border-amber-500/40 bg-amber-950/30';
+      const badgeClass = isCrit ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+
+      return `
+        <div onclick="App.viewCustomerProfile(${a.customer_id})" class="p-3 rounded-xl border ${cardBorder} flex flex-col justify-between gap-2 hover:scale-[1.01] transition cursor-pointer shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-100 text-xs truncate max-w-[140px]">${a.customer_name}</span>
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-bold border ${badgeClass}">
+              ${a.priority_fa} (${a.days_remaining} روز)
+            </span>
+          </div>
+          <div class="flex items-center justify-between text-xs pt-1 border-t border-slate-700/40">
+            <span class="text-slate-400 font-mono text-[11px]">${a.cheque_date}</span>
+            <span class="font-mono font-bold text-slate-200">${this.formatMoney(a.amount)} <span class="text-[10px] font-normal text-slate-400">ریال</span></span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+  },
+
+  riskMatrixData: null,
+  activeRiskMatrixFilter: 'all',
+
+  async loadRiskMatrix() {
+    try {
+      const res = await fetch('/api/analytics/risk-matrix', { credentials: 'omit' });
+      if (res.ok) {
+        this.riskMatrixData = await res.json();
+      }
+    } catch (e) {
+      console.warn('Could not load risk matrix from API:', e);
+    }
+  },
+
+  async renderRiskMatrix() {
+    if (!this.riskMatrixData) {
+      await this.loadRiskMatrix();
+    }
+    const rm = this.riskMatrixData;
+    if (!rm || !rm.quadrants) return;
+
+    const qStars = rm.quadrants.stars;
+    const qOpps = rm.quadrants.opportunities;
+    const qWatch = rm.quadrants.watchlist;
+    const qCrit = rm.quadrants.critical;
+
+    const elStarsCnt = document.getElementById('rm-count-stars');
+    const elStarsAmt = document.getElementById('rm-amount-stars');
+    const elOppsCnt = document.getElementById('rm-count-opportunities');
+    const elOppsAmt = document.getElementById('rm-amount-opportunities');
+    const elWatchCnt = document.getElementById('rm-count-watchlist');
+    const elWatchAmt = document.getElementById('rm-amount-watchlist');
+    const elCritCnt = document.getElementById('rm-count-critical');
+    const elCritAmt = document.getElementById('rm-amount-critical');
+
+    if (elStarsCnt) elStarsCnt.innerText = (qStars.count || 0).toLocaleString('fa-IR');
+    if (elStarsAmt) elStarsAmt.innerText = `${this.formatMoney(qStars.total_amount)} ریال`;
+    if (elOppsCnt) elOppsCnt.innerText = (qOpps.count || 0).toLocaleString('fa-IR');
+    if (elOppsAmt) elOppsAmt.innerText = `${this.formatMoney(qOpps.total_amount)} ریال`;
+    if (elWatchCnt) elWatchCnt.innerText = (qWatch.count || 0).toLocaleString('fa-IR');
+    if (elWatchAmt) elWatchAmt.innerText = `${this.formatMoney(qWatch.total_amount)} ریال`;
+    if (elCritCnt) elCritCnt.innerText = (qCrit.count || 0).toLocaleString('fa-IR');
+    if (elCritAmt) elCritAmt.innerText = `${this.formatMoney(qCrit.total_amount)} ریال`;
+
+    this.renderRiskMatrixTable();
+  },
+
+  filterRiskMatrixQuadrant(key) {
+    this.activeRiskMatrixFilter = key;
+    ['all', 'stars', 'opportunities', 'watchlist', 'critical'].forEach(k => {
+      const btn = document.getElementById(`rm-btn-${k}`);
+      if (btn) {
+        if (k === key) {
+          btn.className = 'px-3 py-1.5 rounded-xl font-bold transition bg-blue-600 text-white shadow';
+        } else {
+          btn.className = 'px-3 py-1.5 rounded-xl font-bold transition bg-slate-800 text-slate-300 hover:text-white';
+        }
+      }
+    });
+    this.renderRiskMatrixTable();
+  },
+
+  renderRiskMatrixTable() {
+    const rm = this.riskMatrixData;
+    const tbody = document.getElementById('risk-matrix-table-body');
+    const countBadge = document.getElementById('rm-filter-count-badge');
+    if (!rm || !tbody) return;
+
+    let items = [];
+    const filter = this.activeRiskMatrixFilter;
+
+    if (filter === 'all') {
+      const addQuadrant = (qList, qName, qBadgeClass) => {
+        if (qList) qList.forEach(c => items.push({ ...c, quadrant_name: qName, quadrant_class: qBadgeClass }));
+      };
+      addQuadrant(rm.quadrants.stars.customers, 'ستاره‌ها (Q1)', 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40');
+      addQuadrant(rm.quadrants.opportunities.customers, 'فرصت‌ها (Q2)', 'bg-blue-500/20 text-blue-300 border-blue-500/40');
+      addQuadrant(rm.quadrants.watchlist.customers, 'تحت نظر (Q3)', 'bg-amber-500/20 text-amber-300 border-amber-500/40');
+      addQuadrant(rm.quadrants.critical.customers, 'هشدار قرمز (Q4)', 'bg-rose-500/20 text-rose-300 border-rose-500/40');
+    } else {
+      const q = rm.quadrants[filter];
+      if (q && q.customers) {
+        const titleMap = {
+          stars: ['ستاره‌ها (Q1)', 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'],
+          opportunities: ['فرصت‌ها (Q2)', 'bg-blue-500/20 text-blue-300 border-blue-500/40'],
+          watchlist: ['تحت نظر (Q3)', 'bg-amber-500/20 text-amber-300 border-amber-500/40'],
+          critical: ['هشدار قرمز (Q4)', 'bg-rose-500/20 text-rose-300 border-rose-500/40']
+        };
+        const meta = titleMap[filter] || ['ناحیه', ''];
+        items = q.customers.map(c => ({ ...c, quadrant_name: meta[0], quadrant_class: meta[1] }));
+      }
+    }
+
+    if (countBadge) {
+      countBadge.innerText = `نمایش ${items.length.toLocaleString('fa-IR')} از ۵۲ مشتری`;
+    }
+
+    if (items.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-slate-400">هیچ رکوردی در این ناحیه یافت نشد.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = items.map((c, idx) => {
+      return `
+        <tr class="border-b border-slate-700/30 hover:bg-slate-500/10 transition">
+          <td class="py-3.5 px-4 font-mono text-sm text-slate-400">${(idx + 1).toLocaleString('fa-IR')}</td>
+          <td class="py-3.5 px-4 font-semibold text-slate-100">${c.full_name}</td>
+          <td class="py-3.5 px-4 text-center">
+            <span class="px-2 py-0.5 rounded-lg text-xs font-bold border ${c.quadrant_class}">${c.quadrant_name}</span>
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            ${this.renderFHSBadge(c)}
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            ${this.renderCreditBadge(c.cbi_rating)}
+          </td>
+          <td class="py-3.5 px-4 text-left font-mono">
+            <span class="text-emerald-400 font-bold">${this.formatMoney(c.total_amount)}</span> <span class="text-[10px] text-slate-400">ریال</span>
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            ${(c.bounced_count || 0) > 0 
+              ? `<span class="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono text-xs font-bold">${c.bounced_count} برگشتی</span>`
+              : `<span class="text-xs text-emerald-400">فاقد برگشتی</span>`
+            }
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            <button onclick="App.viewCustomerProfile(${c.customer_id})" class="px-3 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1 transition mx-auto">
+              <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+              <span>پرونده</span>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+  },
+
+  exportRiskMatrixExcel() {
+    if (!this.riskMatrixData) return;
+    const all = [];
+    ['stars', 'opportunities', 'watchlist', 'critical'].forEach(k => {
+      const q = this.riskMatrixData.quadrants[k];
+      if (q && q.customers) {
+        q.customers.forEach(c => {
+          all.push({
+            "نام مشتری": c.full_name,
+            "کد ملی": c.national_id || '',
+            "ناحیه ماتریس ریسک": q.title,
+            "شاخص سلامت مالی FHS": c.fhs_score,
+            "سطح ریسک": c.level,
+            "رتبه اعتباری بانک مرکزی": c.cbi_rating,
+            "مجموع ارزش تعهدات (ریال)": c.total_amount,
+            "تعداد چک‌ها": c.cheque_count,
+            "تعداد برگشتی": c.bounced_count,
+            "مبلغ برگشتی": c.bounced_amount,
+            "توصیه اعتباری": c.recommendation
+          });
+        });
+      }
+    });
+
+    const ws = XLSX.utils.json_to_sheet(all);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ماتریس ریسک");
+    XLSX.writeFile(wb, "ماتریس_ریسک_مشتریان_صیاد_پرو.xlsx");
+    this.showToast('خروجی اکسل ماتریس ریسک با موفقیت دانلود شد.', 'success');
+  },
+
+  deferredPwaPrompt: null,
+
+  initPWA() {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        const swPath = window.location.pathname.includes('/docs') ? './sw.js' : '/sw.js';
+        navigator.serviceWorker.register(swPath)
+          .then((reg) => {
+            window.AppLogger?.info('PWA', 'سرویس ورکر صیاد پرو فعال شد.');
+            reg.onupdatefound = () => {
+              const installingWorker = reg.installing;
+              if (installingWorker) {
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    this.showToast('نسخه جدید صیاد پرو در دسترس است.', 'info');
+                  }
+                };
+              }
+            };
+          })
+          .catch((err) => {
+            console.warn('[PWA] ServiceWorker registration failed:', err);
+          });
+      });
+    }
+
+    const updateNetworkStatus = () => {
+      const pill = document.getElementById('pwa-status-pill');
+      const text = document.getElementById('pwa-status-text');
+      if (!pill || !text) return;
+
+      if (navigator.onLine) {
+        pill.className = 'hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+        pill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>برخط (PWA)</span>`;
+      } else {
+        pill.className = 'flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40 animate-bounce';
+        pill.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span><span>حالت آفلاین (کش محلی)</span>`;
+        this.showToast('اتصال شبکه قطع شد. برنامه در وضعیت آفلاین از کش محلی بارگذاری می‌شود.', 'warning');
+      }
+    };
+
+    window.addEventListener('online', updateNetworkStatus);
+    window.addEventListener('offline', updateNetworkStatus);
+    updateNetworkStatus();
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.deferredPwaPrompt = e;
+      const installBtn = document.getElementById('pwa-install-btn');
+      if (installBtn) {
+        installBtn.classList.remove('hidden');
+        installBtn.classList.add('flex');
+      }
+    });
+
+    window.addEventListener('appinstalled', () => {
+      this.deferredPwaPrompt = null;
+      const installBtn = document.getElementById('pwa-install-btn');
+      if (installBtn) installBtn.classList.add('hidden');
+      this.showToast('اپلیکیشن صیاد پرو با موفقیت بر روی دستگاه شما نصب شد.', 'success');
+    });
+  },
+
+  promptPwaInstall() {
+    if (this.deferredPwaPrompt) {
+      this.deferredPwaPrompt.prompt();
+      this.deferredPwaPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('[PWA] User accepted install prompt');
+        }
+        this.deferredPwaPrompt = null;
+        const installBtn = document.getElementById('pwa-install-btn');
+        if (installBtn) installBtn.classList.add('hidden');
+      });
+    } else {
+      this.showToast('برای نصب برنامه، از منوی مرورگر گزینه Install App یا Add to Home screen را انتخاب نمایید.', 'info');
+    }
   }
 };
 

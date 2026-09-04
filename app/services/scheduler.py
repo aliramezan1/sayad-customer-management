@@ -7,7 +7,7 @@ import time
 import logging
 from datetime import datetime
 from app.database import get_db
-from app.services.pasargad import record_pasargad_inquiry
+from app.services.pasargad import record_pasargad_inquiry, calculate_days_until_due
 from app.services.smart_logger import smart_logger
 
 logger = logging.getLogger("app.services.scheduler")
@@ -59,7 +59,15 @@ class DailyScheduler:
             time.sleep(600)
 
     def run_batch_inquiry(self, default_holder_id: int = 1) -> dict:
-        """Run batch inquiry for all cheques in database with safe pacing."""
+        """
+        Tiered Smart Maturity Polling:
+        1. Excludes settled / passed old cheques (>30 days overdue with 0 in-transit amount) to conserve bank quota.
+        2. Prioritizes remaining cheques by maturity date:
+           - Tier 1: Due soon (<= 7 days or overdue unsettled)
+           - Tier 2: Up to 30 days ahead (7 < days <= 30)
+           - Tier 3: > 30 days ahead or unspecified
+        3. Records itemized progress in smart_logger and scheduler_logs (successful, unchanged/preserved, failed, excluded).
+        """
         if self.status == "running":
             return {"status": "busy", "message": "زمان‌بند در حال حاضر در حال اجراست"}
             
@@ -70,65 +78,173 @@ class DailyScheduler:
         conn = get_db()
         cursor = conn.cursor()
 
-        # Get all distinct cheques with valid 16-digit sayadi IDs
+        # Get all distinct cheques with valid 16-digit sayadi IDs and latest inquiry metrics
         cursor.execute("""
-        SELECT DISTINCT c.sayadi_id, COALESCE(c.holder_id, ?) as holder_id, c.customer_id
+        SELECT 
+            c.id,
+            c.sayadi_id,
+            COALESCE(c.holder_id, ?) as holder_id,
+            c.customer_id,
+            c.cheque_date,
+            c.amount as cheque_amount,
+            c.status as cheque_status,
+            cust.full_name as customer_name,
+            (SELECT in_transit_amount FROM pasargad_inquiries WHERE sayadi_id = c.sayadi_id ORDER BY id DESC LIMIT 1) as last_in_transit,
+            (SELECT cleared_amount FROM pasargad_inquiries WHERE sayadi_id = c.sayadi_id ORDER BY id DESC LIMIT 1) as last_cleared,
+            (SELECT bounced_amount FROM pasargad_inquiries WHERE sayadi_id = c.sayadi_id ORDER BY id DESC LIMIT 1) as last_bounced,
+            (SELECT status FROM pasargad_inquiries WHERE sayadi_id = c.sayadi_id ORDER BY id DESC LIMIT 1) as last_inquiry_status
         FROM cheques c
+        LEFT JOIN customers cust ON c.customer_id = cust.id
         WHERE c.sayadi_id IS NOT NULL AND length(trim(c.sayadi_id)) = 16
+        ORDER BY c.id ASC
         """, (default_holder_id,))
-        cheques_to_query = cursor.fetchall()
-        
+        raw_cheques = [dict(r) for r in cursor.fetchall()]
+
+        eligible_cheques = []
+        excluded_count = 0
+
+        # Smart Filtering: Exclude settled/cleared checks that are >30 days overdue with 0 in transit
+        for ch in raw_cheques:
+            days_due = calculate_days_until_due(ch["cheque_date"])
+            is_old_settled = False
+            
+            if days_due is not None and days_due < -30:
+                in_transit = ch.get("last_in_transit") or 0.0
+                status = (ch.get("cheque_status") or "").lower()
+                last_inq_status = (ch.get("last_inquiry_status") or "").lower()
+                cleared = ch.get("last_cleared") or 0.0
+                
+                if in_transit == 0:
+                    if status in ("passed", "cleared", "settled", "paid"):
+                        is_old_settled = True
+                    elif cleared > 0:
+                        is_old_settled = True
+                    elif last_inq_status == "not_in_cartable":
+                        is_old_settled = True
+
+            if is_old_settled:
+                excluded_count += 1
+                smart_logger.log(
+                    "DEBUG", "SCHEDULER",
+                    f"چک {ch['sayadi_id']} به دلیل گذشت بیش از ۳۰ روز از سررسید ({days_due} روز) و تسویه قطعی، از استعلام معاف شد.",
+                    sayadi_id=ch["sayadi_id"],
+                    customer_name=ch.get("customer_name") or ""
+                )
+            else:
+                eligible_cheques.append((ch, days_due))
+
+        # Tiered Prioritization:
+        # Tier 1: <= 7 days (or overdue unsettled)
+        # Tier 2: 8 to 30 days
+        # Tier 3: > 30 days or unspecified
+        def _tier_sort_key(item):
+            _, days = item
+            if days is None:
+                return (3, 99999)
+            if days <= 7:
+                return (1, days)
+            if days <= 30:
+                return (2, days)
+            return (3, days)
+
+        eligible_cheques.sort(key=_tier_sort_key)
+
+        tier1_count = sum(1 for _, d in eligible_cheques if d is not None and d <= 7)
+        tier2_count = sum(1 for _, d in eligible_cheques if d is not None and 7 < d <= 30)
+        tier3_count = len(eligible_cheques) - tier1_count - tier2_count
+
+        smart_logger.log(
+            "INFO", "SCHEDULER",
+            f"آغاز استعلام چندسطحی زمانبند: {len(eligible_cheques)} چک واجد شرایط (سطح ۱: {tier1_count}، سطح ۲: {tier2_count}، سطح ۳: {tier3_count}) | معاف: {excluded_count}",
+            details={
+                "eligible": len(eligible_cheques),
+                "tier1": tier1_count,
+                "tier2": tier2_count,
+                "tier3": tier3_count,
+                "excluded": excluded_count,
+                "total": len(raw_cheques)
+            }
+        )
+
         success_count = 0
+        unchanged_count = 0
         error_count = 0
-        
-        for ch in cheques_to_query:
-            if not self.is_running:
+
+        for ch, days_due in eligible_cheques:
+            if self.status != "running":
                 break
 
             sayadi_id = ch["sayadi_id"]
             holder_id = ch["holder_id"]
             cust_id = ch["customer_id"]
+            cust_name = ch.get("customer_name")
 
             try:
-                res = record_pasargad_inquiry(sayadi_id, holder_id, cust_id)
+                res = record_pasargad_inquiry(
+                    sayadi_id=sayadi_id,
+                    holder_id=holder_id,
+                    customer_id=cust_id,
+                    customer_name=cust_name
+                )
+                
                 if res.get("status") == "success":
                     success_count += 1
+                elif res.get("preserved_from_history"):
+                    unchanged_count += 1
                 else:
                     error_count += 1
             except Exception as e:
                 logger.error(f"Scheduler inquiry error for {sayadi_id}: {e}")
                 error_count += 1
-            
-            # Safe pacing between cheques (1.5 seconds)
-            time.sleep(1.5)
 
-        total_processed = success_count + error_count
-        status_str = "success" if error_count == 0 else ("partial" if success_count > 0 else "error")
+            # Safe pacing between cheques (1.0 second)
+            time.sleep(1.0)
+
+        total_processed = success_count + unchanged_count + error_count
+        status_str = "success" if error_count == 0 else ("partial" if (success_count > 0 or unchanged_count > 0) else "error")
+        details_str = f"موفق: {success_count} | بدون تغییر: {unchanged_count} | ناموفق: {error_count} | معاف: {excluded_count} | پردازش‌شده: {total_processed}"
 
         cursor.execute("""
         INSERT INTO scheduler_logs (task_name, status, details, items_processed)
         VALUES (?, ?, ?, ?)
         """, (
-            "استعلام روزانه بانک پاسارگاد",
+            "استعلام چندسطحی پارتو بانک پاسارگاد",
             status_str,
-            f"موفق: {success_count} | خطا: {error_count} | مجموع: {total_processed}",
+            details_str,
             total_processed
         ))
         conn.commit()
         conn.close()
 
+        # Invalidate dashboard stats cache so newly recorded inquiries reflect immediately
+        try:
+            from app.main import invalidate_stats_cache
+            invalidate_stats_cache()
+        except Exception as e:
+            logger.debug(f"Stats cache invalidation from scheduler skipped: {e}")
+
         self.status = "idle"
         smart_logger.log(
             "SUCCESS" if status_str == "success" else "INFO",
             "SCHEDULER",
-            f"پایان استعلام زمان‌بندی‌شده روزانه. موفق: {success_count} | خطا: {error_count}",
-            details={"success": success_count, "error": error_count, "total": total_processed}
+            f"پایان استعلام چندسطحی زمانبند. {details_str}",
+            details={
+                "success": success_count,
+                "unchanged": unchanged_count,
+                "error": error_count,
+                "excluded": excluded_count,
+                "total_processed": total_processed,
+                "total_portfolio": len(raw_cheques)
+            }
         )
         return {
             "status": status_str,
             "success_count": success_count,
+            "unchanged_count": unchanged_count,
             "error_count": error_count,
+            "excluded_count": excluded_count,
             "total_processed": total_processed,
+            "total_cheques": len(raw_cheques),
             "start_time": start_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }

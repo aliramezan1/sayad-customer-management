@@ -11,6 +11,8 @@ venv/
 # Database journals & Logs
 *.sqlite3-journal
 *.log
+.backup_key
+backups/
 
 # OS artifacts
 .DS_Store
@@ -22,6 +24,8 @@ chromedriver/
 
 # Debug & Temporary captures
 *.png
+!app/static/icons/*.png
+!docs/icons/*.png
 *.jpg
 *.jpeg
 captcha_samples/

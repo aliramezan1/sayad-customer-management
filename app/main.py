@@ -4,11 +4,14 @@ Main FastAPI Web Application for Customer & Cheque Management System.
 import os
 import io
 import logging
-from typing import Optional, List
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Response
+import time
+from threading import Lock
+from typing import Optional, List, Dict, Any
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Response, Request, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 import pandas as pd
 import openpyxl
 
@@ -21,8 +24,71 @@ from app.schemas import (
 from app.services.pasargad import record_pasargad_inquiry, query_pasargad_bounced_cheques, check_pasargad_health
 from app.services.scheduler import scheduler_instance
 from app.services.smart_logger import smart_logger
+from app.services.risk_engine import (
+    calculate_customer_fhs,
+    get_cash_flow_forecast,
+    get_risk_matrix,
+    get_near_maturity_alerts,
+    get_all_customers_fhs
+)
 from pydantic import BaseModel
-from typing import Dict, Any
+
+class TTLCache:
+    """
+    Thread-safe in-memory cache with Time-To-Live (TTL) expiration.
+    Used for accelerating heavy dashboard aggregated queries (/api/stats).
+    """
+    def __init__(self, ttl: float = 300.0, maxsize: int = 64):
+        self.ttl = ttl
+        self.maxsize = maxsize
+        self._data: Dict[str, Any] = {}
+        self._expires: Dict[str, float] = {}
+        self._lock = Lock()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            if key in self._data:
+                if time.monotonic() < self._expires.get(key, 0):
+                    return self._data[key]
+                self._data.pop(key, None)
+                self._expires.pop(key, None)
+            return default
+
+    def set(self, key: str, value: Any, ttl: Optional[float] = None) -> None:
+        with self._lock:
+            if len(self._data) >= self.maxsize and key not in self._data:
+                now = time.monotonic()
+                expired = [k for k, exp in self._expires.items() if exp <= now]
+                for k in expired:
+                    self._data.pop(k, None)
+                    self._expires.pop(k, None)
+                if len(self._data) >= self.maxsize:
+                    oldest = next(iter(self._data))
+                    self._data.pop(oldest, None)
+                    self._expires.pop(oldest, None)
+
+            self._data[key] = value
+            self._expires[key] = time.monotonic() + (ttl if ttl is not None else self.ttl)
+
+    def invalidate(self, key: Optional[str] = None) -> None:
+        with self._lock:
+            if key is None:
+                self._data.clear()
+                self._expires.clear()
+            else:
+                self._data.pop(key, None)
+                self._expires.pop(key, None)
+
+    def clear(self) -> None:
+        self.invalidate()
+
+# Dashboard stats in-memory cache (5 minutes = 300 seconds TTL)
+stats_cache = TTLCache(ttl=300.0, maxsize=32)
+
+def invalidate_stats_cache():
+    """Invalidate dashboard metrics cache upon data mutations."""
+    stats_cache.invalidate()
+    logger.debug("Dashboard stats cache invalidated.")
 
 class ClientLogRequest(BaseModel):
     level: str = "INFO"
@@ -31,6 +97,104 @@ class ClientLogRequest(BaseModel):
     details: Optional[Dict[str, Any]] = None
     sayadi_id: Optional[str] = None
     customer_name: Optional[str] = None
+
+
+# ─────────────────────────────────────────────────────────────
+# 🛡️ 3-Tier Role-Based Access Control (RBAC) Architecture
+# ─────────────────────────────────────────────────────────────
+ROLE_ADMIN = "admin"
+ROLE_OPERATOR = "operator"
+ROLE_AUDITOR = "auditor"
+
+ROLES_INFO = {
+    ROLE_ADMIN: {
+        "role": ROLE_ADMIN,
+        "title": "مدیر ارشد سامانه (علی رمضانزاده)",
+        "user_name": "علی رمضانزاده",
+        "permissions": {
+            "can_read": True,
+            "can_write": True,
+            "can_delete": True,
+            "can_inquire": True,
+            "can_backup": True,
+            "can_restore": True,
+            "can_manage_system": True
+        },
+        "description": "دسترسی کامل و نامحدود به تمامی بخش‌ها، ثبت، ویرایش، حذف رکوردها، بازگردانی پایگاه داده و مدیریت سامانه"
+    },
+    ROLE_OPERATOR: {
+        "role": ROLE_OPERATOR,
+        "title": "اپراتور سامانه",
+        "user_name": "اپراتور صیاد",
+        "permissions": {
+            "can_read": True,
+            "can_write": True,
+            "can_delete": False,
+            "can_inquire": True,
+            "can_backup": True,
+            "can_restore": False,
+            "can_manage_system": False
+        },
+        "description": "ثبت و ویرایش مشتریان و چک‌ها، استعلام بانکی و ایجاد پشتیبان (فاقد دسترسی به حذف رکورد یا بازگردانی دیتابیس)"
+    },
+    ROLE_AUDITOR: {
+        "role": ROLE_AUDITOR,
+        "title": "ناظر و حسابرس مالی",
+        "user_name": "ناظر اعتباری",
+        "permissions": {
+            "can_read": True,
+            "can_write": False,
+            "can_delete": False,
+            "can_inquire": False,
+            "can_backup": False,
+            "can_restore": False,
+            "can_manage_system": False
+        },
+        "description": "دسترسی صرفاً خواندنی به داشبورد، گزارش‌ها، لاگ‌ها و دانلود پشتیبان‌ها (فاقد ثبت، ویرایش، حذف، استعلام یا بازگردانی)"
+    }
+}
+
+# Default active system role
+current_system_role: str = ROLE_ADMIN
+
+class SwitchRoleRequest(BaseModel):
+    role: str
+
+class BackupCreateRequest(BaseModel):
+    tag: Optional[str] = "manual"
+
+def get_request_role(request: Request) -> str:
+    """
+    Extracts caller role:
+    1. Checks header 'X-Role' or 'X-User-Role'.
+    2. Checks cookie 'sayad_role'.
+    3. Defaults to current_system_role (default: admin).
+    """
+    header_role = request.headers.get("X-Role") or request.headers.get("X-User-Role")
+    if header_role:
+        return header_role.strip().lower()
+    cookie_role = request.cookies.get("sayad_role")
+    if cookie_role:
+        return cookie_role.strip().lower()
+    return current_system_role
+
+def require_role(allowed_roles: List[str]):
+    """
+    Dependency to enforce RBAC permissions.
+    Raises HTTP 403 Forbidden with clear Persian messages if access is denied.
+    """
+    def _role_checker(request: Request):
+        role = get_request_role(request)
+        if role not in allowed_roles:
+            if role == ROLE_OPERATOR:
+                detail = "دسترسی غیرمجاز: نقش اپراتور مجاز به حذف اطلاعات یا بازگردانی پایگاه داده نیست."
+            elif role == ROLE_AUDITOR:
+                detail = "دسترسی غیرمجاز: نقش ناظر/حسابرس فقط دسترسی خواندنی داشته و مجاز به تغییر داده‌ها، ثبت، حذف، بازگردانی یا اجرای استعلام نیست."
+            else:
+                detail = f"دسترسی غیرمجاز: نقش فعال '{role}' مجوز لازم برای این عملیات را ندارد."
+            raise HTTPException(status_code=403, detail=detail)
+        return role
+    return Depends(_role_checker)
 
 
 # Setup logging
@@ -43,6 +207,9 @@ app = FastAPI(
     description="وب‌اپلیکیشن مدیریت پروفایل مشتریان، استعلام صیادی بانک مرکزی و استعلام اعتباری بانک پاسارگاد",
     version="2.0.0"
 )
+
+# GZip compression middleware (compress responses >= 1000 bytes)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS middleware with Private Network Access support for Hybrid Cloud Bridge
 app.add_middleware(
@@ -113,12 +280,36 @@ def index_page():
             return f.read()
     return "<h1>سامانه مدیریت مشتریان و چک‌های صیادی در حال بارگذاری است...</h1>"
 
+@app.get("/manifest.json")
+def get_manifest():
+    """Serve PWA Web App Manifest."""
+    manifest_path = os.path.join(STATIC_DIR, "manifest.json")
+    if os.path.exists(manifest_path):
+        return FileResponse(manifest_path, media_type="application/manifest+json")
+    raise HTTPException(status_code=404, detail="فایل منیفست PWA یافت نشد.")
+
+@app.get("/sw.js")
+def get_service_worker():
+    """Serve PWA Service Worker with root scope authorization."""
+    sw_path = os.path.join(STATIC_DIR, "sw.js")
+    if os.path.exists(sw_path):
+        return FileResponse(
+            sw_path,
+            media_type="application/javascript",
+            headers={"Service-Worker-Allowed": "/"}
+        )
+    raise HTTPException(status_code=404, detail="فایل سرویس ورکر PWA یافت نشد.")
+
 # ─────────────────────────────────────────────────────────────
 # 📊 Dashboard & Stats API
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/stats")
 def get_dashboard_stats():
-    """Get aggregated metrics and dashboard stats."""
+    """Get aggregated metrics and dashboard stats with TTLCache acceleration."""
+    cached_stats = stats_cache.get("dashboard_stats")
+    if cached_stats is not None:
+        return cached_stats
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -171,7 +362,7 @@ def get_dashboard_stats():
     recent_inquiries = [dict(row) for row in cursor.fetchall()]
 
     conn.close()
-    return {
+    stats_data = {
         "total_customers": total_customers,
         "total_cheques": total_cheques,
         "total_amount": total_amount,
@@ -182,6 +373,85 @@ def get_dashboard_stats():
         "credit_colors": colors,
         "recent_inquiries": recent_inquiries
     }
+    stats_cache.set("dashboard_stats", stats_data)
+    return stats_data
+
+# ─────────────────────────────────────────────────────────────
+# 📈 Fintech Intelligence & Risk Analytics API (Phase 4)
+# ─────────────────────────────────────────────────────────────
+@app.get("/api/analytics/cash-flow")
+def get_cash_flow_analytics(
+    days: int = Query(90, ge=7, le=365, description="افق پیش‌بینی بر حسب روز"),
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR, ROLE_AUDITOR])
+):
+    """
+    Risk-Weighted Predictive Cash Flow Analytics.
+    Returns nominal vs realizable inflows, shortfall, and maturity timeline.
+    Accelerated with TTLCache and accessible by admin, operator, and auditor.
+    """
+    cache_key = f"analytics_cash_flow_{days}"
+    cached = stats_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    forecast = get_cash_flow_forecast(days=days)
+    stats_cache.set(cache_key, forecast, ttl=180.0)
+    return forecast
+
+
+@app.get("/api/analytics/risk-matrix")
+def get_risk_matrix_analytics(
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR, ROLE_AUDITOR])
+):
+    """
+    2D Fintech Risk Matrix Analytics.
+    Returns 4-quadrant customer segmentation (Stars, Opportunities, Watchlist, Critical).
+    Accelerated with TTLCache and accessible by admin, operator, and auditor.
+    """
+    cache_key = "analytics_risk_matrix"
+    cached = stats_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    matrix = get_risk_matrix()
+    stats_cache.set(cache_key, matrix, ttl=180.0)
+    return matrix
+
+
+@app.get("/api/analytics/customer-fhs/{customer_id}")
+def get_customer_fhs_analytics(
+    customer_id: int,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR, ROLE_AUDITOR])
+):
+    """
+    Calculates detailed Financial Health Score (FHS: 0-100) and risk factors for a specific customer.
+    """
+    try:
+        return calculate_customer_fhs(customer_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error computing FHS for customer {customer_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="خطا در محاسبه شاخص سلامت مالی مشتری.")
+
+
+@app.get("/api/analytics/alerts/near-maturity")
+def get_near_maturity_alerts_api(
+    days: int = Query(7, ge=1, le=30),
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR, ROLE_AUDITOR])
+):
+    """
+    Retrieves cheques maturing within the specified upcoming days (default 7 days).
+    """
+    cache_key = f"analytics_alerts_near_maturity_{days}"
+    cached = stats_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    alerts = get_near_maturity_alerts(days_threshold=days)
+    result = {"count": len(alerts), "alerts": alerts}
+    stats_cache.set(cache_key, result, ttl=120.0)
+    return result
 
 # ─────────────────────────────────────────────────────────────
 # 👥 Customer CRUD & Profiles API
@@ -231,6 +501,25 @@ def list_customers(
     cursor.execute(query, params)
     customers = [dict(row) for row in cursor.fetchall()]
     conn.close()
+
+    # Pre-calculate FHS metrics for quick badge display
+    try:
+        all_fhs = get_all_customers_fhs()
+        fhs_lookup = {f["customer_id"]: f for f in all_fhs}
+        for c in customers:
+            f = fhs_lookup.get(c["id"])
+            if f:
+                c["fhs_score"] = f["fhs_score"]
+                c["fhs_level"] = f["level"]
+                c["fhs_color"] = f["color"]
+                c["fhs_bg_class"] = f["bg_class"]
+            else:
+                c["fhs_score"] = 50.0
+                c["fhs_level"] = "متوسط"
+                c["fhs_color"] = "#f59e0b"
+                c["fhs_bg_class"] = "bg-amber-500/10 text-amber-400 border-amber-500/30"
+    except Exception as e:
+        logger.warning(f"Could not load FHS batch for customers: {e}")
 
     return {"customers": customers, "count": len(customers)}
 
@@ -290,10 +579,18 @@ def get_customer_profile(customer_id: int):
     inquiries = [dict(row) for row in cursor.fetchall()]
 
     conn.close()
+
+    fhs_data = None
+    try:
+        fhs_data = calculate_customer_fhs(customer_id)
+    except Exception as e:
+        logger.warning(f"Failed to calculate FHS in profile for {customer_id}: {e}")
+
     return {
         "customer": customer_dict,
         "cheques": cheques,
         "inquiries": inquiries,
+        "fhs": fhs_data,
         "summary": {
             "cheque_count": len(cheques),
             "total_amount": total_amount,
@@ -304,7 +601,10 @@ def get_customer_profile(customer_id: int):
     }
 
 @app.post("/api/customers")
-def create_customer(data: CustomerCreate):
+def create_customer(
+    data: CustomerCreate,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
     """Add a new customer profile."""
     conn = get_db()
     cursor = conn.cursor()
@@ -324,13 +624,18 @@ def create_customer(data: CustomerCreate):
         conn.commit()
         customer_id = cursor.lastrowid
         conn.close()
+        invalidate_stats_cache()
         return {"status": "success", "customer_id": customer_id, "message": "مشتری با موفقیت ثبت شد."}
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=400, detail=f"خطا در ثبت مشتری: {str(e)}")
 
 @app.put("/api/customers/{customer_id}")
-def update_customer(customer_id: int, data: CustomerUpdate):
+def update_customer(
+    customer_id: int,
+    data: CustomerUpdate,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
     """Update an existing customer profile."""
     conn = get_db()
     cursor = conn.cursor()
@@ -372,22 +677,34 @@ def update_customer(customer_id: int, data: CustomerUpdate):
     params.append(customer_id)
 
     query = f"UPDATE customers SET {', '.join(updates)} WHERE id = ?"
-    cursor.execute(query, params)
-    conn.commit()
-    conn.close()
-
-    return {"status": "success", "message": "اطلاعات مشتری با موفقیت به‌روزرسانی شد."}
+    try:
+        cursor.execute(query, params)
+        conn.commit()
+        conn.close()
+        invalidate_stats_cache()
+        return {"status": "success", "message": "اطلاعات مشتری با موفقیت به‌روزرسانی شد."}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"خطا در به‌روزرسانی مشتری: {str(e)}")
 
 @app.delete("/api/customers/{customer_id}")
-def delete_customer(customer_id: int):
+def delete_customer(
+    customer_id: int,
+    role: str = require_role([ROLE_ADMIN])
+):
     """Delete a customer and unbind their cheques."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE cheques SET customer_id = NULL WHERE customer_id = ?", (customer_id,))
-    cursor.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
-    conn.commit()
-    conn.close()
-    return {"status": "success", "message": "مشتری با موفقیت حذف شد."}
+    try:
+        cursor.execute("UPDATE cheques SET customer_id = NULL WHERE customer_id = ?", (customer_id,))
+        cursor.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
+        conn.commit()
+        conn.close()
+        invalidate_stats_cache()
+        return {"status": "success", "message": "مشتری با موفقیت حذف شد."}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"خطا در حذف مشتری: {str(e)}")
 
 # ─────────────────────────────────────────────────────────────
 # 📑 Cheques CRUD API
@@ -446,7 +763,10 @@ def list_cheques(
     return {"cheques": cheques, "count": len(cheques)}
 
 @app.post("/api/cheques")
-def create_cheque(data: ChequeCreate):
+def create_cheque(
+    data: ChequeCreate,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
     """Create a new cheque for a customer."""
     conn = get_db()
     cursor = conn.cursor()
@@ -468,13 +788,18 @@ def create_cheque(data: ChequeCreate):
         conn.commit()
         cheque_id = cursor.lastrowid
         conn.close()
+        invalidate_stats_cache()
         return {"status": "success", "cheque_id": cheque_id, "message": "چک جدید با موفقیت ثبت گردید."}
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=400, detail=f"خطا در ثبت چک: {str(e)}")
 
 @app.put("/api/cheques/{cheque_id}")
-def update_cheque(cheque_id: int, data: ChequeUpdate):
+def update_cheque(
+    cheque_id: int,
+    data: ChequeUpdate,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
     """Update an existing cheque."""
     conn = get_db()
     cursor = conn.cursor()
@@ -517,21 +842,33 @@ def update_cheque(cheque_id: int, data: ChequeUpdate):
     params.append(cheque_id)
 
     query = f"UPDATE cheques SET {', '.join(updates)} WHERE id = ?"
-    cursor.execute(query, params)
-    conn.commit()
-    conn.close()
-
-    return {"status": "success", "message": "اطلاعات چک با موفقیت به‌روزرسانی شد."}
+    try:
+        cursor.execute(query, params)
+        conn.commit()
+        conn.close()
+        invalidate_stats_cache()
+        return {"status": "success", "message": "اطلاعات چک با موفقیت به‌روزرسانی شد."}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"خطا در به‌روزرسانی چک: {str(e)}")
 
 @app.delete("/api/cheques/{cheque_id}")
-def delete_cheque(cheque_id: int):
+def delete_cheque(
+    cheque_id: int,
+    role: str = require_role([ROLE_ADMIN])
+):
     """Delete a cheque."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM cheques WHERE id = ?", (cheque_id,))
-    conn.commit()
-    conn.close()
-    return {"status": "success", "message": "چک با موفقیت حذف گردید."}
+    try:
+        cursor.execute("DELETE FROM cheques WHERE id = ?", (cheque_id,))
+        conn.commit()
+        conn.close()
+        invalidate_stats_cache()
+        return {"status": "success", "message": "چک با موفقیت حذف گردید."}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"خطا در حذف چک: {str(e)}")
 
 # ─────────────────────────────────────────────────────────────
 # 🏦 Predefined 9 Holders API
@@ -550,27 +887,37 @@ def get_holders():
 # 💳 Pasargad Bank Inquiries API
 # ─────────────────────────────────────────────────────────────
 @app.post("/api/inquiries/pasargad")
-def inquiry_pasargad(data: PasargadInquiryRequest):
+def inquiry_pasargad(
+    data: PasargadInquiryRequest,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
     """Execute live Pasargad inquiry for a Sayadi ID and save results."""
     result = record_pasargad_inquiry(
         sayadi_id=data.sayadi_id,
         holder_id=data.holder_id,
         customer_id=data.customer_id
     )
+    invalidate_stats_cache()
     return result
 
 # ─────────────────────────────────────────────────────────────
 # 🏛️ Central Bank of Iran (CBI) Inquiries API
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/inquiries/cbi")
-def inquiry_cbi(sayadi_id: str):
+def inquiry_cbi(
+    sayadi_id: str,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
     """Execute Central Bank (CBI) inquiry for Sayadi ID."""
     from app.services.cbi import query_cbi_sayad_cheque
     result = query_cbi_sayad_cheque(sayadi_id)
     return result
 
 @app.post("/api/inquiries/dual")
-def inquiry_dual(data: PasargadInquiryRequest):
+def inquiry_dual(
+    data: PasargadInquiryRequest,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
     """Execute Dual Inquiry: CBI Central Bank + Pasargad Bank in parallel."""
     from app.services.cbi import query_cbi_sayad_cheque
     
@@ -584,6 +931,7 @@ def inquiry_dual(data: PasargadInquiryRequest):
     # Run CBI
     cbi_res = query_cbi_sayad_cheque(data.sayadi_id)
     
+    invalidate_stats_cache()
     return {
         "status": "success",
         "sayadi_id": data.sayadi_id,
@@ -692,7 +1040,9 @@ def export_logs_endpoint(format: str = "json"):
         )
 
 @app.delete("/api/logs")
-def clear_logs_endpoint():
+def clear_logs_endpoint(
+    role: str = require_role([ROLE_ADMIN])
+):
     """Clear memory log buffer."""
     smart_logger.clear()
     return {"status": "success", "message": "بافر لاگ‌ها با موفقیت پاکسازی شد."}
@@ -709,9 +1059,17 @@ def get_scheduler_status():
     return scheduler_instance.get_status()
 
 @app.post("/api/scheduler/run-now")
-def run_scheduler_now(background_tasks: BackgroundTasks, holder_id: int = 1):
+def run_scheduler_now(
+    background_tasks: BackgroundTasks,
+    holder_id: int = 1,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
     """Trigger on-demand batch inquiry for all cheques in background."""
-    background_tasks.add_task(scheduler_instance.run_batch_inquiry, holder_id)
+    def _run_batch_and_invalidate(h_id: int):
+        scheduler_instance.run_batch_inquiry(h_id)
+        invalidate_stats_cache()
+
+    background_tasks.add_task(_run_batch_and_invalidate, holder_id)
     return {"status": "success", "message": "عملیات استعلام دسته‌ای در پس‌زمینه آغاز شد."}
 
 # ─────────────────────────────────────────────────────────────
@@ -753,6 +1111,112 @@ def export_excel():
         'Content-Disposition': 'attachment; filename="sayad_customers_full_report.xlsx"'
     }
     return StreamingResponse(output, headers=headers, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+# ─────────────────────────────────────────────────────────────
+# 🔐 RBAC Identity & Role Management API
+# ─────────────────────────────────────────────────────────────
+@app.get("/api/auth/current-role")
+def get_current_role_endpoint(request: Request):
+    """Get active role and comprehensive permission map."""
+    role = get_request_role(request)
+    return ROLES_INFO.get(role, ROLES_INFO[ROLE_ADMIN])
+
+@app.post("/api/auth/switch-role")
+def switch_role_endpoint(data: SwitchRoleRequest, response: Response):
+    """Switch active system role between admin, operator, and auditor."""
+    global current_system_role
+    target = data.role.strip().lower()
+    if target not in ROLES_INFO:
+        raise HTTPException(
+            status_code=400,
+            detail=f"نقش نامعتبر است. نقش‌های مجاز: {', '.join(ROLES_INFO.keys())}"
+        )
+    current_system_role = target
+    response.set_cookie("sayad_role", target, max_age=86400 * 30, httponly=False)
+    role_info = ROLES_INFO[target]
+    smart_logger.log(
+        level="INFO",
+        tag="SYSTEM",
+        message=f"نقش کاربری سیستم به '{role_info['title']}' تغییر یافت.",
+        details={"new_role": target, "user_name": role_info["user_name"]}
+    )
+    return {
+        "status": "success",
+        "message": f"نقش سیستم با موفقیت به '{role_info['title']}' تغییر یافت.",
+        "current_role": target,
+        "role_info": role_info
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# 🛡️ Encrypted Backup & Restore Vault API
+# ─────────────────────────────────────────────────────────────
+@app.get("/api/backup/list")
+def list_backups_endpoint(request: Request):
+    """List all encrypted database backups (Admin, Operator, Auditor)."""
+    from app.services.backup_service import list_backups
+    backups = list_backups()
+    return {
+        "status": "success",
+        "backups": backups,
+        "count": len(backups)
+    }
+
+@app.post("/api/backup/create")
+def create_backup_endpoint(
+    data: Optional[BackupCreateRequest] = None,
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
+    """Create a new online encrypted zero-downtime backup (Admin and Operator)."""
+    from app.services.backup_service import create_backup
+    tag = (data.tag if data and data.tag else "manual").strip()
+    try:
+        result = create_backup(tag=tag)
+        return {
+            "status": "success",
+            "message": "پشتیبان‌گیری آنلاین رمزنگاری‌شده با موفقیت انجام شد.",
+            "backup": result
+        }
+    except Exception as e:
+        logger.error(f"Backup creation error: {e}")
+        raise HTTPException(status_code=500, detail=f"خطا در ایجاد نسخه پشتیبان: {str(e)}")
+
+@app.get("/api/backup/download/{filename}")
+def download_backup_endpoint(filename: str, request: Request):
+    """Download encrypted backup file (.enc) (Admin, Operator, Auditor)."""
+    from app.services.backup_service import get_backup_file_path
+    try:
+        file_path = get_backup_file_path(filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="فایل پشتیبان مورد نظر یافت نشد.")
+
+    return FileResponse(
+        path=file_path,
+        media_type="application/octet-stream",
+        filename=os.path.basename(file_path)
+    )
+
+@app.post("/api/backup/restore/{filename}")
+def restore_backup_endpoint(
+    filename: str,
+    role: str = require_role([ROLE_ADMIN])
+):
+    """Safely restore database from an encrypted backup file (Admin ONLY)."""
+    from app.services.backup_service import restore_backup
+    try:
+        result = restore_backup(filename)
+        invalidate_stats_cache()
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"خطا در اعتبارسنجی پشتیبان: {str(e)}")
+    except Exception as e:
+        logger.error(f"Database restore failed: {e}")
+        raise HTTPException(status_code=500, detail=f"خطا در بازگردانی پایگاه داده: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
