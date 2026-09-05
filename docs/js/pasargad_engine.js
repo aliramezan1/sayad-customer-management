@@ -47,7 +47,14 @@ class PasargadEngine {
 
   getSavedBackendUrl() {
     const saved = localStorage.getItem(this.STORAGE_KEY_BACKEND);
-    return saved ? saved.trim() : 'http://127.0.0.1:8000';
+    if (saved && saved.trim()) return saved.trim();
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      const origin = window.location.origin;
+      if (origin.startsWith('http') && !origin.includes('github.io')) {
+        return origin;
+      }
+    }
+    return 'http://127.0.0.1:8000';
   }
 
   setBackendUrl(url) {
@@ -65,8 +72,19 @@ class PasargadEngine {
   // ─────────────────────────────────────────────────────────────
   async checkLocalBackend() {
     const startTime = performance.now();
-    const candidateUrls = [this.localBackendUrl, 'http://127.0.0.1:8000', 'http://localhost:8000'];
-    const uniqueCandidates = [...new Set(candidateUrls)];
+    const candidateUrls = [];
+
+    // Prioritize current browser origin if not github.io (critical for iPhone 17 / LAN)
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      const origin = window.location.origin;
+      if (origin.startsWith('http') && !origin.includes('github.io')) {
+        candidateUrls.push(origin);
+      }
+    }
+    if (this.localBackendUrl) candidateUrls.push(this.localBackendUrl);
+    candidateUrls.push('http://127.0.0.1:8000', 'http://localhost:8000');
+
+    const uniqueCandidates = [...new Set(candidateUrls.filter(Boolean))];
 
     for (const url of uniqueCandidates) {
       try {
@@ -326,6 +344,27 @@ class PasargadEngine {
         const item = queue.shift();
         if (!item) break;
 
+        const cleanSayadi = String(item.sayadi_id || '').trim();
+        if (!cleanSayadi || cleanSayadi.length !== 16) {
+          this.batchState.processed++;
+          const isPromissoryNote = (item.bank_name && item.bank_name.includes('سفته')) || (item.cheque_number && item.cheque_number.includes('سفته'));
+          const nonSayadiEntry = {
+            item,
+            reason: isPromissoryNote 
+              ? 'سند سفته (فاقد شناسه صیادی ۱۶ رقمی - معاف از استعلام صیاد)' 
+              : 'فاقد شناسه صیادی ۱۶ رقمی (نیاز به تکمیل در ویرایش چک)',
+            rawReason: 'شناسه صیادی باید دقیقاً ۱۶ رقم باشد',
+            status: 'missing_sayadi',
+            timestamp: new Date().toISOString()
+          };
+          const fIdx = this.batchState.failedItems.findIndex(f => f.item.id === item.id);
+          if (fIdx >= 0) this.batchState.failedItems[fIdx] = nonSayadiEntry;
+          else this.batchState.failedItems.push(nonSayadiEntry);
+
+          onProgress({ ...this.batchState, currentItem: item });
+          continue;
+        }
+
         const holder = holderMap[item.holder_id] || options.defaultHolder;
         if (!holder || !holder.national_id) {
           this.batchState.processed++;
@@ -348,7 +387,7 @@ class PasargadEngine {
         try {
           await this.delay(dynamicDelay + Math.floor(Math.random() * 150));
 
-          const res = await this.queryCheque(item.sayadi_id, holder.national_id, {
+          const res = await this.queryCheque(cleanSayadi, holder.national_id, {
             forceRefresh: options.forceRefresh,
             holderId: holder.id,
             customerId: item.customer_id
@@ -497,9 +536,11 @@ class PasargadEngine {
   }
 
   async runRetryFailed(holderMap, callbacks = {}) {
-    const failedQueue = (this.batchState.failedItems || []).map(f => f.item);
+    const failedQueue = (this.batchState.failedItems || [])
+      .filter(f => f.status !== 'missing_sayadi')
+      .map(f => f.item);
     if (failedQueue.length === 0) {
-      throw new Error('موردی برای استعلام مجدد وجود ندارد.');
+      throw new Error('تمامی چک‌های باقی‌مانده در لیست، فاقد شناسه صیادی ۱۶ رقمی هستند و امکان استعلام بانکی ندارند.');
     }
 
     window.AppLogger.info('BATCH', `شروع استعلام مجدد هوشمند ${failedQueue.length} فقره چک ناموفق در حالت امن (Safe Mode - تک‌فرآیندی)...`);

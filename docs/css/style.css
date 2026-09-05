@@ -262,6 +262,12 @@ input:focus, select:focus, textarea:focus {
   
   main {
     padding: 0.75rem !important;
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Prevent iOS Safari from auto-zooming on input focus */
+  input, select, textarea {
+    font-size: 16px !important;
   }
 
   .modal-backdrop {
@@ -269,7 +275,7 @@ input:focus, select:focus, textarea:focus {
   }
 
   .modal-backdrop > div {
-    max-height: 94vh !important;
+    max-height: 92vh !important;
     width: 100% !important;
     padding: 1.25rem !important;
     border-radius: 1.25rem !important;
@@ -282,6 +288,128 @@ input:focus, select:focus, textarea:focus {
   th, td {
     padding: 0.5rem 0.6rem !important;
   }
+}
+
+/* 🍎 iOS Native Bottom Sheet Modals (iPhone / Mobile screens <= 640px) */
+@media (max-width: 640px) {
+  .modal-backdrop {
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    padding: 0 !important;
+  }
+
+  .modal-backdrop > div {
+    width: 100% !important;
+    max-height: 88vh !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-top-left-radius: 1.75rem !important;
+    border-top-right-radius: 1.75rem !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    padding: 1.25rem 1rem calc(1.5rem + env(safe-area-inset-bottom, 0px)) 1rem !important;
+    animation: slideUpSheet 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  }
+
+  @keyframes slideUpSheet {
+    from {
+      transform: translateY(100%);
+      opacity: 0.5;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .ios-sheet-handle {
+    width: 44px;
+    height: 4.5px;
+    background: var(--border-color);
+    border-radius: 9999px;
+    margin: 0 auto 0.75rem auto;
+  }
+}
+
+/* 📱 Native iOS Bottom Navigation Bar */
+.ios-bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--bg-glass);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.4rem;
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -4px 25px rgba(0, 0, 0, 0.2);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.ios-tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  flex: 1;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.25rem 0;
+  border-radius: 0.75rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.ios-tab-item:active {
+  transform: scale(0.92);
+}
+
+.ios-tab-item.active {
+  color: var(--accent-primary);
+}
+
+.ios-tab-item.active svg {
+  transform: scale(1.1);
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+}
+
+.ios-tab-item .ios-badge-dot {
+  position: absolute;
+  top: 2px;
+  right: 28%;
+  width: 7px;
+  height: 7px;
+  background: #ef4444;
+  border-radius: 9999px;
+  box-shadow: 0 0 6px #ef4444;
+}
+
+/* 🪪 Mobile Touch Card View for Customers & Cheques */
+.mobile-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  padding: 1rem;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-card:active {
+  transform: scale(0.985);
+  box-shadow: var(--card-shadow-hover);
 }
 
 .table-container-touch {
@@ -306,4 +434,5 @@ input:focus, select:focus, textarea:focus {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.6);
 }
+
 

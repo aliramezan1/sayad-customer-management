@@ -20,6 +20,23 @@ class DailyScheduler:
         self.next_run = None
         self.status = "idle"
         self.log_history = []
+        self.cancel_requested = False
+        self.current_progress = {
+            "is_running": False,
+            "total": 0,
+            "processed": 0,
+            "success_count": 0,
+            "unchanged_count": 0,
+            "error_count": 0,
+            "excluded_count": 0,
+            "percent": 0,
+            "current_sayadi": "",
+            "current_customer": "",
+            "in_transit_sum": 0.0,
+            "bounced_sum": 0.0,
+            "cleared_sum": 0.0,
+            "mode": "idle"
+        }
 
     def start(self):
         """Start the background scheduler daemon."""
@@ -58,20 +75,26 @@ class DailyScheduler:
             # Sleep 10 minutes between checks
             time.sleep(600)
 
-    def run_batch_inquiry(self, default_holder_id: int = 1) -> dict:
+    def cancel_batch(self):
+        """Request cooperative cancellation of currently running batch."""
+        if self.status == "running":
+            self.cancel_requested = True
+            smart_logger.log("WARN", "SCHEDULER", "دستور لغو استعلام دسته‌جمعی دریافت شد...")
+            return True
+        return False
+
+    def run_batch_inquiry(self, default_holder_id: int = 1, force_all: bool = False) -> dict:
         """
-        Tiered Smart Maturity Polling:
-        1. Excludes settled / passed old cheques (>30 days overdue with 0 in-transit amount) to conserve bank quota.
-        2. Prioritizes remaining cheques by maturity date:
-           - Tier 1: Due soon (<= 7 days or overdue unsettled)
-           - Tier 2: Up to 30 days ahead (7 < days <= 30)
-           - Tier 3: > 30 days ahead or unspecified
-        3. Records itemized progress in smart_logger and scheduler_logs (successful, unchanged/preserved, failed, excluded).
+        Tiered Smart Maturity Polling or Full Portfolio Batch Inquiry:
+        - If force_all is True: Queries 100% of all valid 16-digit Sayadi cheques in portfolio without exclusion.
+        - If force_all is False: Excludes settled/cleared old cheques (>30 days overdue with 0 in-transit) to conserve quota.
+        - Updates real-time progress for mobile and frontend live dashboards.
         """
         if self.status == "running":
-            return {"status": "busy", "message": "زمان‌بند در حال حاضر در حال اجراست"}
+            return {"status": "busy", "message": "زمان‌بند در حال حاضر در حال اجراست", "progress": self.current_progress}
             
         self.status = "running"
+        self.cancel_requested = False
         start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.last_run = start_time
         
@@ -103,12 +126,12 @@ class DailyScheduler:
         eligible_cheques = []
         excluded_count = 0
 
-        # Smart Filtering: Exclude settled/cleared checks that are >30 days overdue with 0 in transit
+        # Smart Filtering or Full Portfolio Selection
         for ch in raw_cheques:
             days_due = calculate_days_until_due(ch["cheque_date"])
             is_old_settled = False
             
-            if days_due is not None and days_due < -30:
+            if not force_all and days_due is not None and days_due < -30:
                 in_transit = ch.get("last_in_transit") or 0.0
                 status = (ch.get("cheque_status") or "").lower()
                 last_inq_status = (ch.get("last_inquiry_status") or "").lower()
@@ -153,11 +176,30 @@ class DailyScheduler:
         tier2_count = sum(1 for _, d in eligible_cheques if d is not None and 7 < d <= 30)
         tier3_count = len(eligible_cheques) - tier1_count - tier2_count
 
+        total_eligible = len(eligible_cheques)
+        self.current_progress = {
+            "is_running": True,
+            "total": total_eligible,
+            "processed": 0,
+            "success_count": 0,
+            "unchanged_count": 0,
+            "error_count": 0,
+            "excluded_count": excluded_count,
+            "percent": 0,
+            "current_sayadi": "",
+            "current_customer": "",
+            "in_transit_sum": 0.0,
+            "bounced_sum": 0.0,
+            "cleared_sum": 0.0,
+            "mode": "full_portfolio" if force_all else "tiered_smart"
+        }
+
         smart_logger.log(
             "INFO", "SCHEDULER",
-            f"آغاز استعلام چندسطحی زمانبند: {len(eligible_cheques)} چک واجد شرایط (سطح ۱: {tier1_count}، سطح ۲: {tier2_count}، سطح ۳: {tier3_count}) | معاف: {excluded_count}",
+            f"آغاز استعلام {'کامل سبد چک‌ها (۱۰۰٪)' if force_all else 'چندسطحی هوشمند'}: {total_eligible} چک واجد شرایط (سطح ۱: {tier1_count}، سطح ۲: {tier2_count}، سطح ۳: {tier3_count}) | معاف: {excluded_count}",
             details={
-                "eligible": len(eligible_cheques),
+                "force_all": force_all,
+                "eligible": total_eligible,
                 "tier1": tier1_count,
                 "tier2": tier2_count,
                 "tier3": tier3_count,
@@ -169,15 +211,22 @@ class DailyScheduler:
         success_count = 0
         unchanged_count = 0
         error_count = 0
+        in_transit_sum = 0.0
+        bounced_sum = 0.0
+        cleared_sum = 0.0
 
-        for ch, days_due in eligible_cheques:
-            if self.status != "running":
+        for idx, (ch, days_due) in enumerate(eligible_cheques):
+            if self.cancel_requested or self.status != "running":
+                smart_logger.log("WARN", "SCHEDULER", f"فرآیند استعلام توسط کاربر لغو شد. ({idx} از {total_eligible} پردازش شد)")
                 break
 
             sayadi_id = ch["sayadi_id"]
             holder_id = ch["holder_id"]
             cust_id = ch["customer_id"]
-            cust_name = ch.get("customer_name")
+            cust_name = ch.get("customer_name") or ""
+
+            self.current_progress["current_sayadi"] = sayadi_id
+            self.current_progress["current_customer"] = cust_name
 
             try:
                 res = record_pasargad_inquiry(
@@ -189,26 +238,43 @@ class DailyScheduler:
                 
                 if res.get("status") == "success":
                     success_count += 1
+                    in_transit_sum += float(res.get("in_transit_amount", 0) or 0)
+                    bounced_sum += float(res.get("bounced_amount", 0) or 0)
+                    cleared_sum += float(res.get("cleared_amount", 0) or 0)
                 elif res.get("preserved_from_history"):
                     unchanged_count += 1
+                    in_transit_sum += float(res.get("in_transit_amount", 0) or 0)
+                    bounced_sum += float(res.get("bounced_amount", 0) or 0)
+                    cleared_sum += float(res.get("cleared_amount", 0) or 0)
                 else:
                     error_count += 1
             except Exception as e:
                 logger.error(f"Scheduler inquiry error for {sayadi_id}: {e}")
                 error_count += 1
 
-            # Safe pacing between cheques (1.0 second)
-            time.sleep(1.0)
+            processed = idx + 1
+            pct = round((processed / (total_eligible or 1)) * 100, 1)
+            self.current_progress["processed"] = processed
+            self.current_progress["percent"] = pct
+            self.current_progress["success_count"] = success_count
+            self.current_progress["unchanged_count"] = unchanged_count
+            self.current_progress["error_count"] = error_count
+            self.current_progress["in_transit_sum"] = in_transit_sum
+            self.current_progress["bounced_sum"] = bounced_sum
+            self.current_progress["cleared_sum"] = cleared_sum
+
+            # Safe pacing between cheques (600ms)
+            time.sleep(0.6)
 
         total_processed = success_count + unchanged_count + error_count
         status_str = "success" if error_count == 0 else ("partial" if (success_count > 0 or unchanged_count > 0) else "error")
-        details_str = f"موفق: {success_count} | بدون تغییر: {unchanged_count} | ناموفق: {error_count} | معاف: {excluded_count} | پردازش‌شده: {total_processed}"
+        details_str = f"موفق: {success_count} | بدون تغییر/حفظ تاریخچه: {unchanged_count} | ناموفق: {error_count} | معاف: {excluded_count} | کل پردازش: {total_processed}"
 
         cursor.execute("""
         INSERT INTO scheduler_logs (task_name, status, details, items_processed)
         VALUES (?, ?, ?, ?)
         """, (
-            "استعلام چندسطحی پارتو بانک پاسارگاد",
+            "استعلام کامل سبد چک‌های صیادی (پاسارگاد)" if force_all else "استعلام چندسطحی پارتو بانک پاسارگاد",
             status_str,
             details_str,
             total_processed
@@ -224,11 +290,15 @@ class DailyScheduler:
             logger.debug(f"Stats cache invalidation from scheduler skipped: {e}")
 
         self.status = "idle"
+        self.current_progress["is_running"] = False
+        self.current_progress["percent"] = 100.0
+
         smart_logger.log(
             "SUCCESS" if status_str == "success" else "INFO",
             "SCHEDULER",
-            f"پایان استعلام چندسطحی زمانبند. {details_str}",
+            f"پایان استعلام دسته‌جمعی سبد چک‌ها. {details_str}",
             details={
+                "force_all": force_all,
                 "success": success_count,
                 "unchanged": unchanged_count,
                 "error": error_count,
@@ -245,12 +315,15 @@ class DailyScheduler:
             "excluded_count": excluded_count,
             "total_processed": total_processed,
             "total_cheques": len(raw_cheques),
+            "in_transit_sum": in_transit_sum,
+            "bounced_sum": bounced_sum,
+            "cleared_sum": cleared_sum,
             "start_time": start_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
     def get_status(self) -> dict:
-        """Get current scheduler status and recent logs."""
+        """Get current scheduler status, live progress, and recent logs."""
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM scheduler_logs ORDER BY id DESC LIMIT 10")
@@ -261,7 +334,8 @@ class DailyScheduler:
             "is_running": self.is_running,
             "current_status": self.status,
             "last_run": self.last_run,
-            "recent_logs": logs
+            "recent_logs": logs,
+            "progress": self.current_progress
         }
 
     def stop(self):

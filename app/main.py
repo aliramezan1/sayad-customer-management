@@ -1062,15 +1062,32 @@ def get_scheduler_status():
 def run_scheduler_now(
     background_tasks: BackgroundTasks,
     holder_id: int = 1,
+    force_all: bool = True,
     role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
 ):
-    """Trigger on-demand batch inquiry for all cheques in background."""
-    def _run_batch_and_invalidate(h_id: int):
-        scheduler_instance.run_batch_inquiry(h_id)
+    """Trigger on-demand batch inquiry for cheques in background (with optional force_all)."""
+    def _run_batch_and_invalidate(h_id: int, f_all: bool):
+        scheduler_instance.run_batch_inquiry(default_holder_id=h_id, force_all=f_all)
         invalidate_stats_cache()
 
-    background_tasks.add_task(_run_batch_and_invalidate, holder_id)
-    return {"status": "success", "message": "عملیات استعلام دسته‌ای در پس‌زمینه آغاز شد."}
+    background_tasks.add_task(_run_batch_and_invalidate, holder_id, force_all)
+    return {
+        "status": "success",
+        "message": "عملیات استعلام دسته‌جمعی سبد چک‌ها در پس‌زمینه آغاز شد.",
+        "force_all": force_all
+    }
+
+@app.post("/api/scheduler/cancel")
+def cancel_scheduler_batch(
+    role: str = require_role([ROLE_ADMIN, ROLE_OPERATOR])
+):
+    """Cancel currently running background batch inquiry."""
+    cancelled = scheduler_instance.cancel_batch()
+    return {
+        "status": "success" if cancelled else "idle",
+        "message": "دستور لغو ارسال شد." if cancelled else "هیچ استعلام دسته‌جمعی فعالی در حال اجرا نبود."
+    }
+
 
 # ─────────────────────────────────────────────────────────────
 # 📊 Excel Export API

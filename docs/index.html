@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>سامانه جامع مدیریت مشتریان، چک‌های صیادی و اعتبارسنجی بانکی | صیاد پرو</title>
   
   <!-- Tailwind CSS CDN with Custom Color Support -->
@@ -213,32 +213,37 @@
           <span>نصب برنامه</span>
         </button>
 
-        <button onclick="App.openBulkInquiryModal()" class="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-2xl text-sm font-bold flex items-center gap-2 shadow-lg transition">
+        <!-- Mobile Quick Action Button (+) -->
+        <button onclick="App.openMobileActionSheet()" class="p-2 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white rounded-xl md:hidden shadow-md flex items-center justify-center shrink-0" title="عملیات و ابزارهای سریع">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+        </button>
+
+        <button onclick="App.openBulkInquiryModal()" class="hidden md:flex px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-2xl text-sm font-bold items-center gap-2 shadow-lg transition">
           <i data-lucide="zap" class="w-4 h-4 text-amber-300 animate-pulse"></i>
-          <span class="hidden sm:inline">استعلام کلی سبد</span>
+          <span>استعلام کلی سبد</span>
         </button>
 
         <!-- Database Sync Button -->
-        <button onclick="App.syncData()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-2xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 border border-slate-700/50 shadow-sm transition" title="همگام‌سازی و بارگذاری مجدد دیتابیس">
+        <button onclick="App.syncData()" class="hidden md:flex px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-2xl text-xs sm:text-sm font-semibold items-center gap-1.5 border border-slate-700/50 shadow-sm transition" title="همگام‌سازی و بارگذاری مجدد دیتابیس">
           <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i>
-          <span class="hidden md:inline">همگام‌سازی دیتابیس</span>
+          <span>همگام‌سازی دیتابیس</span>
         </button>
 
-        <button onclick="App.openAddCustomerModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
+        <button onclick="App.openAddCustomerModal()" class="hidden md:flex px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-semibold items-center gap-2 shadow-lg transition">
           <i data-lucide="user-plus" class="w-4 h-4"></i>
-          <span class="hidden md:inline">مشتری جدید</span>
+          <span>مشتری جدید</span>
         </button>
 
-        <button onclick="App.openAddChequeModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg transition">
+        <button onclick="App.openAddChequeModal()" class="hidden md:flex px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-sm font-semibold items-center gap-2 shadow-lg transition">
           <i data-lucide="plus-circle" class="w-4 h-4"></i>
-          <span class="hidden sm:inline">ثبت چک</span>
+          <span>ثبت چک</span>
         </button>
 
-        <button onclick="App.toggleFullScreen()" class="p-2.5 bg-slate-800/80 hover:bg-slate-700 rounded-2xl transition" title="حالت تمام صفحه (Fullscreen)">
+        <button onclick="App.toggleFullScreen()" class="hidden md:flex p-2.5 bg-slate-800/80 hover:bg-slate-700 rounded-2xl transition" title="حالت تمام صفحه (Fullscreen)">
           <i data-lucide="maximize" class="w-4 h-4 text-slate-300"></i>
         </button>
 
-        <button onclick="window.toggleTheme()" class="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl md:hidden transition">
+        <button onclick="window.toggleTheme()" class="hidden md:flex p-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl transition">
           <i data-lucide="sun" class="w-4 h-4 theme-sun-icon text-amber-400"></i>
           <i data-lucide="moon" class="w-4 h-4 theme-moon-icon hidden text-indigo-300"></i>
         </button>
@@ -561,9 +566,15 @@
           </div>
         </div>
 
-        <!-- Customers Table -->
+        <!-- Customers Table (Desktop) & Touch Cards (Mobile) -->
         <div class="glass-card overflow-hidden">
-          <div class="overflow-x-auto">
+          <!-- Mobile Touch Cards List -->
+          <div id="customers-mobile-cards" class="md:hidden space-y-3 p-3">
+            <!-- Dynamically populated by app.js -->
+          </div>
+
+          <!-- Desktop Table View -->
+          <div class="hidden md:block overflow-x-auto">
             <table class="w-full text-right text-sm">
               <thead class="bg-slate-900/60 text-slate-400 text-xs border-b border-slate-700/60">
                 <tr>
@@ -713,9 +724,15 @@
           <div class="text-xs text-slate-400" id="rm-filter-count-badge">نمایش کل ۵۲ مشتری</div>
         </div>
 
-        <!-- Customers Table for Risk Matrix -->
+        <!-- Customers Table (Desktop) & Touch Cards (Mobile) for Risk Matrix -->
         <div class="glass-card overflow-hidden">
-          <div class="overflow-x-auto">
+          <!-- Mobile Touch Cards List -->
+          <div id="risk-matrix-mobile-cards" class="md:hidden space-y-3 p-3">
+            <!-- Dynamically populated by app.js -->
+          </div>
+
+          <!-- Desktop Table View -->
+          <div class="hidden md:block overflow-x-auto">
             <table class="w-full text-right text-sm">
               <thead class="bg-slate-900/60 text-slate-400 text-xs border-b border-slate-700/60">
                 <tr>
@@ -769,9 +786,15 @@
           </div>
         </div>
 
-        <!-- Cheques Table -->
+        <!-- Cheques Table (Desktop) & Touch Cards (Mobile) -->
         <div class="glass-card overflow-hidden">
-          <div class="overflow-x-auto">
+          <!-- Mobile Touch Cards List -->
+          <div id="cheques-mobile-cards" class="md:hidden space-y-3 p-3">
+            <!-- Dynamically populated by app.js -->
+          </div>
+
+          <!-- Desktop Table View -->
+          <div class="hidden md:block overflow-x-auto">
             <table class="w-full text-right text-sm">
               <thead class="bg-slate-900/60 text-slate-400 text-xs border-b border-slate-700/60">
                 <tr>
@@ -1105,7 +1128,11 @@
           </div>
           <div>
             <h3 class="font-bold text-lg">استعلام گروهی تمام سبد چک‌ها</h3>
-            <p class="text-xs text-slate-400">اجرای موازی و خودکار استعلام بر روی <span id="bulk-total-count" class="font-bold text-blue-400">۰</span> فقره چک</p>
+            <p class="text-xs text-slate-400">
+              کل سبد: <span id="bulk-total-count" class="font-bold text-blue-400 font-mono">۰</span> فقره
+              (<span id="bulk-sayadi-count" class="text-emerald-400 font-bold font-mono">۰</span> صیادی معتبر | 
+               <span id="bulk-nonsayadi-count" class="text-amber-400 font-bold font-mono">۰</span> فاقد شناسه / سفته)
+            </p>
           </div>
         </div>
         <div class="flex items-center gap-1.5">
@@ -1233,11 +1260,26 @@
       </div>
 
       <!-- Action Buttons -->
-      <div class="flex justify-end gap-3 pt-2">
-        <button onclick="App.closeBulkInquiryModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-semibold transition">بستن</button>
-        <button id="btn-pause-bulk" onclick="App.pauseBulkInquiry()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl text-xs font-bold transition hidden">توقف موقت</button>
-        <button id="btn-resume-bulk" onclick="App.resumeBulkInquiry()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-bold transition hidden">ادامه عملیات</button>
-        <button id="btn-start-bulk" onclick="App.startBulkInquiry()" class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-2xl text-xs font-bold shadow-lg transition">شروع استعلام گروهی</button>
+      <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div class="flex items-center gap-2">
+          <button onclick="App.closeBulkInquiryModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-semibold transition">بستن</button>
+          <button id="btn-cancel-server-bulk" onclick="App.cancelServerSideBulkInquiry()" class="px-4 py-2 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-2xl text-xs font-bold transition hidden">لغو استعلام سرور</button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btn-pause-bulk" onclick="App.pauseBulkInquiry()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl text-xs font-bold transition hidden">توقف موقت</button>
+          <button id="btn-resume-bulk" onclick="App.resumeBulkInquiry()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-bold transition hidden">ادامه عملیات</button>
+          
+          <button id="btn-start-bulk" onclick="App.startBulkInquiry()" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-2xl text-xs font-bold transition flex items-center gap-1.5" title="اجرای استعلام مستقیم از مرورگر کلاینت">
+            <i data-lucide="play" class="w-4 h-4 text-sky-400"></i>
+            <span>استعلام تعاملی مرورگر</span>
+          </button>
+
+          <button id="btn-start-server-bulk" onclick="App.startServerSideBulkInquiry()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-2xl text-xs font-bold shadow-xl transition flex items-center gap-2" title="مناسب آیفون ۱۷ و موبایل: اجرا روی سرور بدون قطعی در صورت خاموش شدن صفحه">
+            <i data-lucide="server" class="w-4 h-4 text-amber-300"></i>
+            <span>استعلام جامع سروری (ویژه موبایل)</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -1712,9 +1754,9 @@
   </div>
 
   <!-- ─────────────────────────────────────────────────────────────
-       📟 Floating Real-Time Live Console Drawer
+       📟 Floating Real-Time Live Console Drawer (Desktop Docked)
        ───────────────────────────────────────────────────────────── -->
-  <div id="floating-live-console" class="fixed bottom-0 left-0 right-0 z-40 transition-all duration-300">
+  <div id="floating-live-console" class="hidden md:block fixed bottom-0 left-0 right-0 z-40 transition-all duration-300">
     <!-- Collapsed Minibar -->
     <div id="console-minibar" class="bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-300 shadow-2xl">
       <div class="flex items-center gap-3">
@@ -1756,6 +1798,116 @@
       <div id="console-drawer-feed" class="flex-1 overflow-y-auto space-y-1.5 py-2 select-text font-mono text-[11px]">
         <!-- Streamed log lines -->
       </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       📱 iOS Native Bottom Navigation Bar (iPhone 17 & Mobile)
+       ───────────────────────────────────────────────────────────── -->
+  <nav id="ios-bottom-bar" class="ios-bottom-bar md:hidden">
+    <button onclick="App.switchTab('dashboard')" class="ios-tab-item active" data-tab="dashboard" title="داشبورد">
+      <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+      <span>داشبورد</span>
+    </button>
+    
+    <button onclick="App.switchTab('customers')" class="ios-tab-item" data-tab="customers" title="مشتریان">
+      <i data-lucide="users" class="w-5 h-5"></i>
+      <span>مشتریان</span>
+    </button>
+    
+    <button onclick="App.switchTab('cheques', 'all')" class="ios-tab-item" data-tab="cheques" title="چک‌ها">
+      <i data-lucide="file-text" class="w-5 h-5"></i>
+      <span>چک‌ها</span>
+    </button>
+    
+    <button onclick="App.switchTab('risk-matrix')" class="ios-tab-item" data-tab="risk-matrix" title="ماتریس ریسک">
+      <i data-lucide="layout-grid" class="w-5 h-5 text-amber-400"></i>
+      <span>ریسک & نقد</span>
+    </button>
+    
+    <button onclick="App.openMobileActionSheet()" class="ios-tab-item" id="ios-tab-actions" title="عملیات سریع">
+      <div class="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+      </div>
+      <span>عملیات</span>
+    </button>
+  </nav>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       📱 Mobile Quick Action Sheet (iOS Native Bottom Drawer)
+       ───────────────────────────────────────────────────────────── -->
+  <div id="mobile-action-sheet" class="modal-backdrop fixed inset-0 z-50 hidden" onclick="if(event.target === this) App.closeMobileActionSheet()">
+    <div class="glass-card w-full p-5 space-y-4">
+      <div class="ios-sheet-handle"></div>
+      
+      <div class="flex items-center justify-between pb-2 border-b border-slate-700/50">
+        <h3 class="font-bold text-base text-slate-100 flex items-center gap-2">
+          <i data-lucide="zap" class="w-5 h-5 text-amber-400"></i>
+          <span>عملیات و ابزارهای سریع</span>
+        </h3>
+        <button onclick="App.closeMobileActionSheet()" class="p-1 text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Quick Actions Grid -->
+      <div class="grid grid-cols-2 gap-2.5">
+        <button onclick="App.closeMobileActionSheet(); App.openAddChequeModal();" class="p-3 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 flex flex-col items-center justify-center gap-1.5 text-indigo-300 transition">
+          <i data-lucide="plus-circle" class="w-6 h-6 text-indigo-400"></i>
+          <span class="text-xs font-bold">ثبت چک صیادی</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); App.openAddCustomerModal();" class="p-3 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 flex flex-col items-center justify-center gap-1.5 text-blue-300 transition">
+          <i data-lucide="user-plus" class="w-6 h-6 text-blue-400"></i>
+          <span class="text-xs font-bold">مشتری جدید</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); App.openBulkInquiryModal();" class="p-3 rounded-2xl bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/30 flex flex-col items-center justify-center gap-1.5 text-sky-300 transition">
+          <i data-lucide="zap" class="w-6 h-6 text-amber-300 animate-pulse"></i>
+          <span class="text-xs font-bold">استعلام کلی سبد</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); App.openBulkDrilldown();" class="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 flex flex-col items-center justify-center gap-1.5 text-slate-200 transition">
+          <i data-lucide="file-search" class="w-6 h-6 text-sky-400"></i>
+          <span class="text-xs font-bold">گزارش تفکیکی نتایج</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); App.openBackupModal();" class="p-3 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 flex flex-col items-center justify-center gap-1.5 text-emerald-300 transition">
+          <i data-lucide="shield-check" class="w-6 h-6 text-emerald-400"></i>
+          <span class="text-xs font-bold">پشتیبان‌گیری امن</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); App.exportToExcel();" class="p-3 rounded-2xl bg-teal-600/20 hover:bg-teal-600/30 border border-teal-500/30 flex flex-col items-center justify-center gap-1.5 text-teal-300 transition">
+          <i data-lucide="file-spreadsheet" class="w-6 h-6 text-teal-400"></i>
+          <span class="text-xs font-bold">خروجی اکسل کامل</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); App.switchTab('cbi');" class="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 flex flex-col items-center justify-center gap-1.5 text-slate-200 transition">
+          <i data-lucide="landmark" class="w-6 h-6 text-amber-400"></i>
+          <span class="text-xs font-bold">استعلام بانک مرکزی</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); App.switchTab('pasargad');" class="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 flex flex-col items-center justify-center gap-1.5 text-slate-200 transition">
+          <i data-lucide="building-2" class="w-6 h-6 text-blue-400"></i>
+          <span class="text-xs font-bold">استعلام پاسارگاد</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); App.switchTab('logs');" class="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 flex flex-col items-center justify-center gap-1.5 text-slate-200 transition">
+          <i data-lucide="terminal" class="w-6 h-6 text-indigo-400"></i>
+          <span class="text-xs font-bold">مدیریت لاگ‌ها</span>
+        </button>
+
+        <button onclick="App.closeMobileActionSheet(); window.toggleTheme();" class="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 flex flex-col items-center justify-center gap-1.5 text-slate-200 transition">
+          <i data-lucide="sun" class="w-6 h-6 text-amber-400 theme-sun-icon"></i>
+          <i data-lucide="moon" class="w-6 h-6 text-indigo-300 theme-moon-icon hidden"></i>
+          <span class="text-xs font-bold">حالت روز / شب</span>
+        </button>
+      </div>
+
+      <!-- Close Button -->
+      <button onclick="App.closeMobileActionSheet()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-2xl transition">
+        بستن منو
+      </button>
     </div>
   </div>
 

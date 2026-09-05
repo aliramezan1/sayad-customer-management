@@ -490,6 +490,15 @@ const App = {
       }
     });
 
+    // 📱 Sync iOS Native Bottom Navigation Bar
+    document.querySelectorAll('.ios-tab-item').forEach(btn => {
+      if (btn.dataset.tab === tabName) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
     document.querySelectorAll('.tab-view').forEach(view => {
       view.classList.toggle('hidden', view.id !== `view-${tabName}`);
     });
@@ -497,6 +506,20 @@ const App = {
     this.renderCurrentView();
     if (window.lucide) lucide.createIcons();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+
+  // 📱 Mobile Quick Action Sheet Handlers
+  openMobileActionSheet() {
+    const sheet = document.getElementById('mobile-action-sheet');
+    if (sheet) {
+      sheet.classList.remove('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+  },
+
+  closeMobileActionSheet() {
+    const sheet = document.getElementById('mobile-action-sheet');
+    if (sheet) sheet.classList.add('hidden');
   },
 
   // 🎯 Stat Card Drilldown Click Handlers
@@ -787,6 +810,82 @@ const App = {
       `;
     }).join('');
 
+    // 📱 Mobile Touch Cards Rendering for Customers (iPhone 17 & Mobile)
+    const mobileContainer = document.getElementById('customers-mobile-cards');
+    if (mobileContainer) {
+      if (list.length === 0) {
+        mobileContainer.innerHTML = `<div class="text-center py-10 text-slate-400 text-xs">هیچ مشتری با مشخصات فیلتر فعلی یافت نشد.</div>`;
+      } else {
+        mobileContainer.innerHTML = list.map((c, idx) => {
+          const cheques = this.getCustomerCheques(c.id);
+          const inqs = this.getCustomerInquiries(c.id);
+          const inTransitSum = inqs.reduce((s, i) => s + (parseFloat(i.in_transit_amount) || 0), 0);
+          const clearedSum = inqs.reduce((s, i) => s + (parseFloat(i.cleared_amount) || 0), 0);
+          const bouncedSum = inqs.reduce((s, i) => s + (parseFloat(i.bounced_amount) || 0), 0);
+          const totalSum = cheques.reduce((s, ch) => s + (parseFloat(ch.amount) || 0), 0);
+
+          return `
+            <div class="mobile-card space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-base shadow">
+                    ${c.full_name.charAt(0)}
+                  </div>
+                  <div>
+                    <div class="font-bold text-sm text-slate-100 flex items-center gap-2">
+                      <span>${c.full_name}</span>
+                      <span class="text-[10px] text-slate-400 font-mono">#${(idx + 1).toLocaleString('fa-IR')}</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 font-mono mt-0.5">
+                      کد ملی: ${c.national_id || '---'}
+                    </div>
+                  </div>
+                </div>
+                <div class="flex flex-col items-end gap-1">
+                  ${this.renderCreditBadge(c.credit_color)}
+                  ${this.renderFHSBadge(c)}
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80 text-xs">
+                <div>
+                  <span class="text-[10px] text-slate-400 block">تعداد چک‌ها</span>
+                  <span class="font-bold font-mono text-blue-400">${(cheques.length).toLocaleString('fa-IR')} فقره</span>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-400 block">مجموع تعهدات</span>
+                  <span class="font-bold font-mono text-emerald-400">${this.formatMoney(totalSum)} <span class="text-[9px] text-slate-400 font-sans">ریال</span></span>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-400 block">چک در راه</span>
+                  <span class="font-bold font-mono text-sky-400">${this.formatMoney(inTransitSum)} <span class="text-[9px] text-slate-400 font-sans">ریال</span></span>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-400 block">برگشتی</span>
+                  <span class="font-bold font-mono text-rose-400">${this.formatMoney(bouncedSum)} <span class="text-[9px] text-slate-400 font-sans">ریال</span></span>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-1 border-t border-slate-800/60">
+                <button onclick="App.viewCustomerProfile(${c.id})" class="flex-1 py-2 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition">
+                  <i data-lucide="eye" class="w-4 h-4"></i>
+                  <span>مشاهده پرونده کامل</span>
+                </button>
+                <div class="flex items-center gap-1.5 mr-2">
+                  <button onclick="App.openEditCustomerModal(${c.id})" class="p-2 bg-amber-600/20 hover:bg-amber-600 text-amber-300 rounded-xl transition" title="ویرایش">
+                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                  </button>
+                  <button onclick="App.deleteCustomer(${c.id})" class="p-2 bg-rose-600/20 hover:bg-rose-600 text-rose-300 rounded-xl transition" title="حذف">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
     if (window.lucide) lucide.createIcons();
   },
 
@@ -941,6 +1040,92 @@ const App = {
         </tr>
       `;
     }).join('');
+
+    // 📱 Mobile Touch Cards Rendering for Cheques (iPhone 17 & Mobile)
+    const mobileChequesContainer = document.getElementById('cheques-mobile-cards');
+    if (mobileChequesContainer) {
+      if (list.length === 0) {
+        mobileChequesContainer.innerHTML = `<div class="text-center py-10 text-slate-400 text-xs">هیچ چکی با مشخصات فیلتر فعلی یافت نشد.</div>`;
+      } else {
+        mobileChequesContainer.innerHTML = list.map((ch, idx) => {
+          const cust = this.state.customers.find(c => c.id === ch.customer_id);
+          const inq = this.getLatestInquiry(ch.sayadi_id);
+          const defaultHolder = this.state.holders[0] || { full_name: 'علی رمضانزاده', id: 1, national_id: '0921974061' };
+          const holder = this.state.holders.find(h => h.id === ch.holder_id) || defaultHolder;
+          const isSayadi = ch.sayadi_id && String(ch.sayadi_id).trim().length === 16;
+
+          return `
+            <div class="mobile-card space-y-3">
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-100">${cust ? cust.full_name : 'نامشخص'}</span>
+                    <span class="text-[10px] text-slate-400 font-mono">#${(idx + 1).toLocaleString('fa-IR')}</span>
+                  </div>
+                  <div class="text-xs text-slate-400 mt-0.5">
+                    شماره چک: <strong class="text-slate-200 font-mono">${ch.cheque_number || '---'}</strong> | سررسید: <span class="font-mono text-slate-300">${ch.cheque_date || '---'}</span>
+                  </div>
+                </div>
+                <div class="text-left">
+                  <div class="text-sm font-black font-mono text-emerald-400">${this.formatMoney(ch.amount || 0)}</div>
+                  <div class="text-[9px] text-slate-400 font-sans">ریال</div>
+                </div>
+              </div>
+
+              <!-- Sayadi ID Box with Copy Button -->
+              <div class="flex items-center justify-between bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800 text-xs font-mono">
+                <div class="flex items-center gap-2 truncate">
+                  <i data-lucide="credit-card" class="w-4 h-4 text-sky-400 shrink-0"></i>
+                  ${isSayadi 
+                    ? `<span class="text-sky-300 font-bold">${ch.sayadi_id}</span>` 
+                    : `<span class="text-amber-400 text-[11px] font-sans">${ch.bank_name && ch.bank_name.includes('سفته') ? 'سند سفته (فاقد شناسه صیادی)' : 'فاقد شناسه صیادی'}</span>`
+                  }
+                </div>
+                ${isSayadi ? `
+                  <button onclick="navigator.clipboard.writeText('${ch.sayadi_id}'); App.showToast('شناسه صیادی کپی شد', 'info');" class="p-1 text-slate-400 hover:text-white transition" title="کپی شناسه">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                  </button>
+                ` : ''}
+              </div>
+
+              <!-- Bank & Holder & Status Chips -->
+              <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300">
+                <div class="flex items-center gap-1.5">
+                  <i data-lucide="building" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>${ch.bank_name || '---'}</span>
+                </div>
+                <div class="px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[10px]">
+                  هولدر: ${holder.full_name}
+                </div>
+              </div>
+
+              <!-- Action Bar -->
+              <div class="flex items-center justify-between pt-1 border-t border-slate-800/60">
+                ${isSayadi ? `
+                  <button onclick="App.inlineInquiryCheque('${ch.sayadi_id}', ${ch.customer_id || 'null'}, this)" class="flex-1 py-2 bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                    <span>استعلام صیادی زنده</span>
+                  </button>
+                ` : `
+                  <div class="flex-1 text-[11px] text-amber-400 py-1 flex items-center gap-1">
+                    <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0"></i>
+                    <span>معاف از استعلام صیاد</span>
+                  </div>
+                `}
+                <div class="flex items-center gap-1.5 mr-2">
+                  <button onclick="App.openEditChequeModal(${ch.id})" class="p-2 bg-amber-600/20 hover:bg-amber-600 text-amber-300 rounded-xl transition" title="ویرایش">
+                    <i data-lucide="edit" class="w-4 h-4"></i>
+                  </button>
+                  <button onclick="App.deleteCheque(${ch.id})" class="p-2 bg-rose-600/20 hover:bg-rose-600 text-rose-300 rounded-xl transition" title="حذف">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
 
     if (window.lucide) lucide.createIcons();
   },
@@ -1701,9 +1886,42 @@ const App = {
   // ⚡ Bulk Portfolio Inquiry Actions
   // ─────────────────────────────────────────────────────────────
 
+  serverBatchPollInterval: null,
+
+  async checkServerBatchRunningState() {
+    const backendUrl = window.PasargadInquiryEngine ? window.PasargadInquiryEngine.localBackendUrl : '';
+    try {
+      const res = await fetch(`${backendUrl}/api/scheduler/status`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const p = data.progress || {};
+      if (p.is_running || data.current_status === 'running') {
+        const btnStart = document.getElementById('btn-start-bulk');
+        const btnServer = document.getElementById('btn-start-server-bulk');
+        const btnCancel = document.getElementById('btn-cancel-server-bulk');
+        if (btnStart) btnStart.classList.add('hidden');
+        if (btnServer) btnServer.classList.add('hidden');
+        if (btnCancel) btnCancel.classList.remove('hidden');
+
+        if (!this.serverBatchPollInterval) {
+          this.serverBatchPollInterval = setInterval(() => this.pollServerBatchStatus(), 1200);
+        }
+      }
+    } catch (e) {}
+  },
+
   openBulkInquiryModal() {
     const modal = document.getElementById('bulk-inquiry-modal');
-    document.getElementById('bulk-total-count').innerText = this.state.cheques.length.toLocaleString('fa-IR');
+    const totalCheques = this.state.cheques.length;
+    const validSayadi = this.state.cheques.filter(c => c.sayadi_id && String(c.sayadi_id).trim().length === 16).length;
+    const nonSayadi = totalCheques - validSayadi;
+
+    const totalEl = document.getElementById('bulk-total-count');
+    if (totalEl) totalEl.innerText = totalCheques.toLocaleString('fa-IR');
+    const sayadiEl = document.getElementById('bulk-sayadi-count');
+    if (sayadiEl) sayadiEl.innerText = validSayadi.toLocaleString('fa-IR');
+    const nonSayadiEl = document.getElementById('bulk-nonsayadi-count');
+    if (nonSayadiEl) nonSayadiEl.innerText = nonSayadi.toLocaleString('fa-IR');
 
     const bs = window.PasargadInquiryEngine.batchState;
     const lastBatch = this.state.lastBatchResults;
@@ -1711,6 +1929,8 @@ const App = {
     if (bs && bs.isRunning) {
       // Currently running: keep progress and buttons
       document.getElementById('btn-start-bulk').classList.add('hidden');
+      const btnServer = document.getElementById('btn-start-server-bulk');
+      if (btnServer) btnServer.classList.add('hidden');
       document.getElementById('btn-pause-bulk').classList.toggle('hidden', bs.isPaused);
       document.getElementById('btn-resume-bulk').classList.toggle('hidden', !bs.isPaused);
     } else if (bs && (bs.processed > 0 || (bs.successCount + bs.errorCount > 0))) {
@@ -1742,6 +1962,8 @@ const App = {
       }
 
       document.getElementById('btn-start-bulk').classList.remove('hidden');
+      const btnServer = document.getElementById('btn-start-server-bulk');
+      if (btnServer) btnServer.classList.remove('hidden');
       document.getElementById('btn-pause-bulk').classList.add('hidden');
       document.getElementById('btn-resume-bulk').classList.add('hidden');
     } else if (lastBatch) {
@@ -1774,6 +1996,8 @@ const App = {
       }
 
       document.getElementById('btn-start-bulk').classList.remove('hidden');
+      const btnServer = document.getElementById('btn-start-server-bulk');
+      if (btnServer) btnServer.classList.remove('hidden');
       document.getElementById('btn-pause-bulk').classList.add('hidden');
       document.getElementById('btn-resume-bulk').classList.add('hidden');
     } else {
@@ -1790,15 +2014,144 @@ const App = {
       document.getElementById('bulk-stat-in-transit').innerText = '۰';
       document.getElementById('bulk-stat-bounced').innerText = '۰';
       document.getElementById('btn-start-bulk').classList.remove('hidden');
+      const btnServer = document.getElementById('btn-start-server-bulk');
+      if (btnServer) btnServer.classList.remove('hidden');
       document.getElementById('btn-pause-bulk').classList.add('hidden');
       document.getElementById('btn-resume-bulk').classList.add('hidden');
       const retryBox = document.getElementById('bulk-retry-prompt-box');
       if (retryBox) retryBox.classList.add('hidden');
     }
 
+    this.checkServerBatchRunningState();
     this.populateHolderDropdowns();
     modal.classList.remove('hidden');
     if (window.lucide) lucide.createIcons();
+  },
+
+  async startServerSideBulkInquiry() {
+    const holderId = parseInt(document.getElementById('bulk-holder-select').value) || 1;
+    
+    document.getElementById('btn-start-bulk').classList.add('hidden');
+    document.getElementById('btn-start-server-bulk').classList.add('hidden');
+    document.getElementById('btn-pause-bulk').classList.add('hidden');
+    const btnCancel = document.getElementById('btn-cancel-server-bulk');
+    if (btnCancel) btnCancel.classList.remove('hidden');
+
+    const progressText = document.getElementById('bulk-progress-text');
+    const progressBar = document.getElementById('bulk-progress-bar');
+    const progressPercent = document.getElementById('bulk-progress-percent');
+
+    progressText.innerText = 'در حال ارسال فرمان استعلام جامع سروری...';
+    progressBar.style.width = '2%';
+    progressPercent.innerText = '۲٪';
+
+    try {
+      const backendUrl = window.PasargadInquiryEngine ? window.PasargadInquiryEngine.localBackendUrl : '';
+      const res = await fetch(`${backendUrl}/api/scheduler/run-now?holder_id=${holderId}&force_all=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'خطا در آغاز استعلام سروری');
+      }
+
+      this.showToast('استعلام جامع سروری در پس‌زمینه آغاز شد. پایش زنده فعال است.', 'info');
+      window.AppLogger.batch('SCHEDULER', 'فرمان استعلام جامع سروری صادر شد. پایش زنده پیشرفت آغاز گردید...');
+
+      if (this.serverBatchPollInterval) clearInterval(this.serverBatchPollInterval);
+      this.serverBatchPollInterval = setInterval(() => this.pollServerBatchStatus(), 1200);
+
+    } catch (e) {
+      this.showToast(e.message, 'error');
+      document.getElementById('btn-start-bulk').classList.remove('hidden');
+      document.getElementById('btn-start-server-bulk').classList.remove('hidden');
+      if (btnCancel) btnCancel.classList.add('hidden');
+      progressText.innerText = `خطا: ${e.message}`;
+    }
+  },
+
+  async pollServerBatchStatus() {
+    const backendUrl = window.PasargadInquiryEngine ? window.PasargadInquiryEngine.localBackendUrl : '';
+    try {
+      const res = await fetch(`${backendUrl}/api/scheduler/status`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const p = data.progress || {};
+      const isRunning = p.is_running || (data.current_status === 'running');
+
+      const progressBar = document.getElementById('bulk-progress-bar');
+      const progressPercent = document.getElementById('bulk-progress-percent');
+      const progressText = document.getElementById('bulk-progress-text');
+
+      if (isRunning) {
+        const pct = p.percent || Math.round(((p.processed || 0) / (p.total || 1)) * 100) || 0;
+        if (progressBar) progressBar.style.width = `${pct}%`;
+        if (progressPercent) progressPercent.innerText = `${pct.toLocaleString('fa-IR')}٪`;
+        if (progressText) {
+          progressText.innerText = `استعلام سروری: چک ${(p.processed || 0).toLocaleString('fa-IR')} از ${(p.total || 0).toLocaleString('fa-IR')} (${p.current_customer || p.current_sayadi || ''})...`;
+        }
+
+        const elSuc = document.getElementById('bulk-stat-success');
+        if (elSuc) elSuc.innerText = (p.success_count || 0).toLocaleString('fa-IR');
+        const elErr = document.getElementById('bulk-stat-error');
+        if (elErr) elErr.innerText = (p.error_count || 0).toLocaleString('fa-IR');
+        const elTrans = document.getElementById('bulk-stat-in-transit');
+        if (elTrans) elTrans.innerText = App.formatMoney(p.in_transit_sum || 0);
+        const elBounced = document.getElementById('bulk-stat-bounced');
+        if (elBounced) elBounced.innerText = App.formatMoney(p.bounced_sum || 0);
+
+      } else {
+        // Finished
+        if (this.serverBatchPollInterval) {
+          clearInterval(this.serverBatchPollInterval);
+          this.serverBatchPollInterval = null;
+        }
+
+        if (progressBar) progressBar.style.width = '100%';
+        if (progressPercent) progressPercent.innerText = '۱۰۰٪';
+        if (progressText) {
+          progressText.innerText = `استعلام جامع سروری با موفقیت به پایان رسید! (${(p.success_count || 0).toLocaleString('fa-IR')} موفق، ${(p.unchanged_count || 0).toLocaleString('fa-IR')} بدون تغییر/حفظ تاریخچه)`;
+        }
+
+        const btnStart = document.getElementById('btn-start-bulk');
+        if (btnStart) btnStart.classList.remove('hidden');
+        const btnServer = document.getElementById('btn-start-server-bulk');
+        if (btnServer) btnServer.classList.remove('hidden');
+        const btnCancel = document.getElementById('btn-cancel-server-bulk');
+        if (btnCancel) btnCancel.classList.add('hidden');
+
+        // Reload data from backend so new inquiries reflect in UI
+        await this.loadData();
+        this.renderCurrentView();
+        this.showToast('استعلام جامع سروری سبد چک‌ها با موفقیت ۱۰۰٪ پایان یافت.', 'success');
+      }
+    } catch (e) {
+      console.warn('Error polling server batch status:', e);
+    }
+  },
+
+  async cancelServerSideBulkInquiry() {
+    const backendUrl = window.PasargadInquiryEngine ? window.PasargadInquiryEngine.localBackendUrl : '';
+    try {
+      await fetch(`${backendUrl}/api/scheduler/cancel`, { method: 'POST' });
+      this.showToast('دستور لغو استعلام سروری ارسال شد.', 'warn');
+      if (this.serverBatchPollInterval) {
+        clearInterval(this.serverBatchPollInterval);
+        this.serverBatchPollInterval = null;
+      }
+      const btnStart = document.getElementById('btn-start-bulk');
+      if (btnStart) btnStart.classList.remove('hidden');
+      const btnServer = document.getElementById('btn-start-server-bulk');
+      if (btnServer) btnServer.classList.remove('hidden');
+      const btnCancel = document.getElementById('btn-cancel-server-bulk');
+      if (btnCancel) btnCancel.classList.add('hidden');
+      document.getElementById('bulk-progress-text').innerText = 'استعلام سروری توسط کاربر لغو شد.';
+    } catch (e) {
+      this.showToast(e.message, 'error');
+    }
   },
 
   closeBulkInquiryModal() {
@@ -1812,13 +2165,15 @@ const App = {
   async startBulkInquiry() {
     const holderId = parseInt(document.getElementById('bulk-holder-select').value);
     const defaultHolder = this.state.holders.find(h => h.id === holderId) || this.state.holders[0];
-    const concurrency = parseInt(document.getElementById('bulk-concurrency-select').value) || 3;
+    const concurrency = parseInt(document.getElementById('bulk-concurrency-select').value) || 2;
 
     // Create holder lookup map
     const holderMap = {};
     this.state.holders.forEach(h => { holderMap[h.id] = h; });
 
     document.getElementById('btn-start-bulk').classList.add('hidden');
+    const btnServer = document.getElementById('btn-start-server-bulk');
+    if (btnServer) btnServer.classList.add('hidden');
     document.getElementById('btn-pause-bulk').classList.remove('hidden');
 
     const progressBar = document.getElementById('bulk-progress-bar');
@@ -1892,8 +2247,9 @@ const App = {
         },
         onFinished: (summary) => {
           document.getElementById('btn-pause-bulk').classList.add('hidden');
-          document.getElementById('btn-resume-bulk').classList.add('hidden');
           document.getElementById('btn-start-bulk').classList.remove('hidden');
+          const btnServer = document.getElementById('btn-start-server-bulk');
+          if (btnServer) btnServer.classList.remove('hidden');
 
           const pipSub = document.getElementById('pip-progress-sub');
           if (pipSub) pipSub.innerText = `استعلام پایان یافت (${summary.successCount} موفق)`;
@@ -4353,7 +4709,6 @@ const App = {
               ? `<span class="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono text-xs font-bold">${c.bounced_count} برگشتی</span>`
               : `<span class="text-xs text-emerald-400">فاقد برگشتی</span>`
             }
-          </td>
           <td class="py-3.5 px-4 text-center">
             <button onclick="App.viewCustomerProfile(${c.customer_id})" class="px-3 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1 transition mx-auto">
               <i data-lucide="eye" class="w-3.5 h-3.5"></i>
@@ -4363,6 +4718,62 @@ const App = {
         </tr>
       `;
     }).join('');
+
+    // 📱 Mobile Touch Cards for Risk Matrix
+    const mobileRmContainer = document.getElementById('risk-matrix-mobile-cards');
+    if (mobileRmContainer) {
+      if (items.length === 0) {
+        mobileRmContainer.innerHTML = `<div class="text-center py-10 text-slate-400 text-xs">هیچ رکوردی در این ناحیه یافت نشد.</div>`;
+      } else {
+        mobileRmContainer.innerHTML = items.map((c, idx) => {
+          return `
+            <div class="mobile-card space-y-2.5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 text-white flex items-center justify-center font-bold text-sm">
+                    ${(idx + 1).toLocaleString('fa-IR')}
+                  </div>
+                  <div>
+                    <h5 class="font-bold text-sm text-slate-100">${c.full_name}</h5>
+                    <span class="text-[10px] text-slate-400">شناسه مشتری: #${c.customer_id}</span>
+                  </div>
+                </div>
+                <span class="px-2 py-0.5 rounded-lg text-xs font-bold border ${c.quadrant_class}">${c.quadrant_name}</span>
+              </div>
+
+              <div class="flex items-center justify-between bg-slate-900/60 p-2.5 rounded-xl border border-slate-800 text-xs">
+                <div>
+                  <span class="text-[10px] text-slate-400 block mb-0.5">شاخص FHS</span>
+                  ${this.renderFHSBadge(c)}
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-400 block mb-0.5">رتبه بانک مرکزی</span>
+                  ${this.renderCreditBadge(c.cbi_rating)}
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-400 block mb-0.5">وضعیت برگشتی</span>
+                  ${(c.bounced_count || 0) > 0 
+                    ? `<span class="text-rose-400 font-bold font-mono text-[11px]">${c.bounced_count} برگشتی</span>`
+                    : `<span class="text-emerald-400 text-[11px]">فاقد برگشتی</span>`
+                  }
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-1 border-t border-slate-800/60">
+                <div>
+                  <span class="text-[10px] text-slate-400 block">مجموع تعهدات</span>
+                  <span class="font-bold font-mono text-emerald-400 text-sm">${this.formatMoney(c.total_amount)} <span class="text-[9px] text-slate-400 font-sans">ریال</span></span>
+                </div>
+                <button onclick="App.viewCustomerProfile(${c.customer_id})" class="px-4 py-2 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition">
+                  <i data-lucide="eye" class="w-4 h-4"></i>
+                  <span>مشاهده پرونده</span>
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
 
     if (window.lucide) lucide.createIcons();
   },
