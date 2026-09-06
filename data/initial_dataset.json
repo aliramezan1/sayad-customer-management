@@ -260,19 +260,6 @@
       "updated_at": "2026-09-04 00:00:00"
     },
     {
-      "id": 15,
-      "full_name": "صاحب چک فريمان (۰۹۲۴۰۲۰۸۶۵)",
-      "national_id": "0924020865",
-      "phone": null,
-      "address": null,
-      "notes": null,
-      "credit_color": "قرمز",
-      "risk_score": 85,
-      "original_name_alias": "اقاي ضيافتي",
-      "created_at": "2026-08-28 10:00:00",
-      "updated_at": "2026-09-04 00:00:00"
-    },
-    {
       "id": 16,
       "full_name": "احمد زحمت كش باجگيران",
       "national_id": "0860270361",
@@ -538,7 +525,7 @@
       "national_id": "0924020865",
       "phone": null,
       "address": null,
-      "notes": null,
+      "notes": "صاحب چک فريمان (۰۹۲۴۰۲۰۸۶۵)",
       "credit_color": "قرمز",
       "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
@@ -997,7 +984,7 @@
     },
     {
       "id": 16,
-      "customer_id": 15,
+      "customer_id": 36,
       "sayadi_id": "1907030071639288",
       "cheque_number": "804984",
       "amount": 1380000000.0,
@@ -2261,7 +2248,7 @@
     },
     {
       "id": 95,
-      "customer_id": 15,
+      "customer_id": 36,
       "sayadi_id": "9910030071163929",
       "cheque_number": "804987",
       "amount": 1380000000.0,
