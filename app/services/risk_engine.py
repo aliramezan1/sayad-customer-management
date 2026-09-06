@@ -3,8 +3,10 @@
 Fintech Intelligence, Financial Health Score (FHS), Risk Matrix & Predictive Cash Flow Engine.
 Part of Sayad Pro 3.0 Fintech Architecture.
 """
+import os
+import math
 import sqlite3
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple, Union
 from datetime import datetime, date
 import statistics
 import logging
@@ -671,3 +673,727 @@ def get_near_maturity_alerts(days_threshold: int = 7, conn: Optional[sqlite3.Con
     finally:
         if should_close:
             conn.close()
+
+
+# =============================================================================
+# Milestone 3: Risk Scoring & Concentration Engine (R4, F11, F12, F13)
+# =============================================================================
+
+# 7-Component Formula Weights (sum = 1.00)
+WEIGHT_CURRENT_BOUNCED = 0.30          # 30%: Current bounced amount
+WEIGHT_PERSISTENCE_PERIODS = 0.20       # 20%: Number of periods with bounced debt
+WEIGHT_RECENT_BOUNCED_INCREASE = 0.15   # 15%: Recent bounced increase
+WEIGHT_BOUNCED_TO_ACTIVE_RATIO = 0.15   # 15%: Ratio of bounced to active commitment (bounced / (fund_cheques + in_transit))
+WEIGHT_RAPID_IN_FLIGHT_GROWTH = 0.10    # 10%: Rapid in-flight growth
+WEIGHT_VOLATILITY = 0.05                # 5%: Volatility / instability
+WEIGHT_DATA_QUALITY = 0.05              # 5%: Data quality / freshness penalty
+
+ALL_COMPONENT_WEIGHTS = {
+    "c1_current_bounced": WEIGHT_CURRENT_BOUNCED,
+    "c2_persistence_periods": WEIGHT_PERSISTENCE_PERIODS,
+    "c3_recent_bounced_increase": WEIGHT_RECENT_BOUNCED_INCREASE,
+    "c4_bounced_to_active_ratio": WEIGHT_BOUNCED_TO_ACTIVE_RATIO,
+    "c5_rapid_in_flight_growth": WEIGHT_RAPID_IN_FLIGHT_GROWTH,
+    "c6_volatility": WEIGHT_VOLATILITY,
+    "c7_data_quality": WEIGHT_DATA_QUALITY,
+}
+
+# Mandatory Floors (کف‌های اجباری)
+FLOOR_50B_PERSISTENT = 85.0     # Bounced > 50B Rials and persistent (>= 3 periods): min score 85 (e.g. Hossein Heshmati)
+FLOOR_20B_PERSISTENT = 78.0     # Bounced > 20B Rials and persistent (>= 3 periods): min score 78 (e.g. Vahid Zavar, Toroghi, Vafadar)
+FLOOR_10B_PERSISTENT = 72.0     # Bounced > 10B Rials and persistent (>= 3 periods): min score 72 (e.g. Ziafati, Zahmatkesh)
+FLOOR_5B_PERSISTENT = 65.0      # Bounced > 5B Rials and persistent (>= 3 periods): min score 65 (e.g. Zahedi, Ashrafian)
+FLOOR_POS_PERSISTENT = 45.0     # Bounced > 0 and persistent (>= 3 periods): min score 45
+FLOOR_NEW_NON_PERSISTENT = 35.0 # New non-persistent bounced (1-2 periods): min score 35 (e.g. Zahra Bahrami Pouya)
+
+# Benchmark Reference Scaling Constants
+BENCHMARK_BOUNCED_MAX = 50_000_000_000.0          # 50B Rials for 100% C1
+BENCHMARK_PERIODS_MAX = 10.0                       # 10 periods for 100% C2
+BENCHMARK_BOUNCED_INCREASE_MAX = 5_000_000_000.0   # 5B Rials for 100% C3
+BENCHMARK_IN_FLIGHT_GROWTH_MAX = 10_000_000_000.0  # 10B Rials for 100% C5
+
+# Risk Tiers (5 Tiers)
+TIER_LOW = "LOW"
+TIER_NORMAL = "NORMAL"
+TIER_WATCH = "WATCH"
+TIER_HIGH = "HIGH"
+TIER_IMMEDIATE_ACTION = "IMMEDIATE_ACTION"
+
+TIER_LABELS = {
+    TIER_LOW: {"fa": "کم‌ریسک", "en": "Low", "range": "0 - 20"},
+    TIER_NORMAL: {"fa": "عادی", "en": "Normal", "range": "21 - 40"},
+    TIER_WATCH: {"fa": "مراقبت", "en": "Watch", "range": "41 - 60"},
+    TIER_HIGH: {"fa": "پرریسک", "en": "High", "range": "61 - 80"},
+    TIER_IMMEDIATE_ACTION: {"fa": "اقدام فوری", "en": "Immediate Action", "range": "81 - 100"},
+}
+
+# Action Recommendations (Verbatim from ORIGINAL_REQUEST.md §R4)
+RECOMMENDATION_IMMEDIATE_ACTION = "توقف فوری تخصیص اعتبار، مطالبه وثیقه ملکی/نقدی، اقدام حقوقی و وصول آنی."
+RECOMMENDATION_HIGH = "توقف افزایش اعتبار، اخذ وثیقه ملکی/نقدی، پایش فشرده و کاهش تعهدات."
+RECOMMENDATION_WATCH = "پایش هفتگی، اخذ تضمین مضاعف، عدم پذیرش چک جدید با سررسید بالای ۳۰ روز."
+RECOMMENDATION_NORMAL = "ادامه تعامل در سقف مصوب."
+RECOMMENDATION_LOW = "ادامه تعامل در سقف مصوب."
+
+TIER_RECOMMENDATIONS = {
+    TIER_IMMEDIATE_ACTION: RECOMMENDATION_IMMEDIATE_ACTION,
+    TIER_HIGH: RECOMMENDATION_HIGH,
+    TIER_WATCH: RECOMMENDATION_WATCH,
+    TIER_NORMAL: RECOMMENDATION_NORMAL,
+    TIER_LOW: RECOMMENDATION_LOW,
+}
+
+
+def evaluate_mandatory_floor(bounced_amount: float, period_count: int) -> Tuple[float, Optional[str]]:
+    """
+    Evaluates the 6 mandatory floors according to R4:
+    1. Bounced > 50B Rials and persistent (>= 3 periods): min score 85
+    2. Bounced > 20B Rials and persistent (>= 3 periods): min score 78
+    3. Bounced > 10B Rials and persistent (>= 3 periods): min score 72
+    4. Bounced > 5B Rials and persistent (>= 3 periods): min score 65
+    5. Bounced > 0 and persistent (>= 3 periods): min score 45
+    6. New non-persistent bounced (> 0 and 1-2 periods): min score 35
+    Returns: (floor_value, floor_rule_name)
+    """
+    bounced = float(bounced_amount or 0.0)
+    periods = int(period_count or 0)
+
+    if bounced <= 0.0:
+        return 0.0, None
+
+    is_persistent = (periods >= 3)
+
+    if bounced > 50_000_000_000.0 and is_persistent:
+        return FLOOR_50B_PERSISTENT, "BOUNCED_OVER_50B_PERSISTENT"
+    elif bounced > 20_000_000_000.0 and is_persistent:
+        return FLOOR_20B_PERSISTENT, "BOUNCED_OVER_20B_PERSISTENT"
+    elif bounced > 10_000_000_000.0 and is_persistent:
+        return FLOOR_10B_PERSISTENT, "BOUNCED_OVER_10B_PERSISTENT"
+    elif bounced > 5_000_000_000.0 and is_persistent:
+        return FLOOR_5B_PERSISTENT, "BOUNCED_OVER_5B_PERSISTENT"
+    elif bounced > 0.0 and is_persistent:
+        return FLOOR_POS_PERSISTENT, "BOUNCED_POSITIVE_PERSISTENT"
+    elif bounced > 0.0 and (1 <= periods <= 2):
+        return FLOOR_NEW_NON_PERSISTENT, "BOUNCED_NEW_NON_PERSISTENT"
+
+    return 0.0, None
+
+
+def classify_risk_tier(score: float) -> Dict[str, str]:
+    """
+    Maps 0-100 score to 5 risk tiers and action recommendations:
+    - کم‌ریسک (Low): 0 to 20
+    - عادی (Normal): 21 to 40
+    - مراقبت (Watch): 41 to 60
+    - پرریسک (High): 61 to 80
+    - اقدام فوری (Immediate Action): 81 to 100
+    """
+    s = float(score)
+    if s <= 20.0:
+        tier = TIER_LOW
+    elif s <= 40.0:
+        tier = TIER_NORMAL
+    elif s <= 60.0:
+        tier = TIER_WATCH
+    elif s <= 80.0:
+        tier = TIER_HIGH
+    else:
+        tier = TIER_IMMEDIATE_ACTION
+
+    info = TIER_LABELS[tier]
+    return {
+        "tier_code": tier,
+        "tier_name_fa": info["fa"],
+        "tier_name_en": info["en"],
+        "score_range": info["range"],
+        "action_recommendation": TIER_RECOMMENDATIONS[tier],
+    }
+
+
+def compute_component_bounced_amount(bounced_amount: float) -> float:
+    """Component 1 (30% weight): Current bounced amount normalized to [0, 100]."""
+    b = max(0.0, float(bounced_amount or 0.0))
+    if b <= 0.0:
+        return 0.0
+    return min(100.0, (b / BENCHMARK_BOUNCED_MAX) * 100.0)
+
+
+def compute_component_persistence_periods(period_count: int, bounced_amount: Optional[float] = None) -> float:
+    """
+    Component 2 (20% weight): Number of periods with bounced debt normalized to [0, 100].
+    If bounced_amount is explicitly 0.0, active persistence is 0.0.
+    """
+    p = max(0, int(period_count or 0))
+    if p == 0:
+        return 0.0
+    if bounced_amount is not None and float(bounced_amount) <= 0.0:
+        return 0.0
+    return min(100.0, (p / BENCHMARK_PERIODS_MAX) * 100.0)
+
+
+def compute_component_recent_bounced_increase(delta_bounced: float) -> float:
+    """Component 3 (15% weight): Recent bounced increase normalized to [0, 100]."""
+    db = max(0.0, float(delta_bounced or 0.0))
+    if db <= 0.0:
+        return 0.0
+    return min(100.0, (db / BENCHMARK_BOUNCED_INCREASE_MAX) * 100.0)
+
+
+def compute_component_bounced_ratio(bounced_amount: float, active_commitment: float) -> float:
+    """
+    Component 4 (15% weight): Ratio of bounced to active commitment (bounced / (fund_cheques + in_transit)).
+    Normalized to [0, 100].
+    """
+    b = max(0.0, float(bounced_amount or 0.0))
+    if b <= 0.0:
+        return 0.0
+    ac = max(0.0, float(active_commitment or 0.0))
+    if ac <= 0.0:
+        return 100.0
+    ratio = b / ac
+    return min(100.0, ratio * 100.0)
+
+
+def compute_component_in_flight_growth(delta_in_transit: float) -> float:
+    """Component 5 (10% weight): Rapid in-flight growth normalized to [0, 100]."""
+    dit = max(0.0, float(delta_in_transit or 0.0))
+    if dit <= 0.0:
+        return 0.0
+    return min(100.0, (dit / BENCHMARK_IN_FLIGHT_GROWTH_MAX) * 100.0)
+
+
+def compute_component_volatility(volatility: float) -> float:
+    """Component 6 (5% weight): Volatility / instability normalized to [0, 100]."""
+    v = max(0.0, float(volatility or 0.0))
+    if v <= 0.0:
+        return 0.0
+    if v <= 1.0:
+        return min(100.0, v * 100.0)
+    return min(100.0, v)
+
+
+def compute_component_data_quality(identity_status: Optional[str] = None, freshness_status: Optional[str] = None) -> float:
+    """Component 7 (5% weight): Data quality / freshness penalty normalized to [0, 100]."""
+    if identity_status == "UNRESOLVED_IDENTITY":
+        return 100.0
+    if freshness_status == "FAILED":
+        return 100.0
+    if freshness_status == "NOT_FOUND":
+        return 80.0
+    if freshness_status == "REUSED_VALID_SUCCESS":
+        return 30.0
+    if freshness_status == "EXEMPT":
+        return 10.0
+    return 0.0
+
+
+class RiskEngine:
+    """
+    Risk Scoring & Concentration Engine (Milestone 3).
+    Implements:
+    - Exact 7-component formula (0-100 score).
+    - 6 mandatory score floors.
+    - 5 risk tiers with operational action recommendations.
+    - HHI concentration calculation & Top 10 issuers list.
+    """
+
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        identity_resolver: Optional[Any] = None,
+        financial_aggregator: Optional[Any] = None,
+        trend_detector: Optional[Any] = None,
+    ):
+        """
+        Initialize the RiskEngine with database connection and supporting services.
+        """
+        if db_path:
+            self.db_path = db_path
+        else:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.db_path = os.path.join(base_dir, "customers.db")
+
+        self._resolver = identity_resolver
+        self._aggregator = financial_aggregator
+        self._trend_detector = trend_detector
+
+    @property
+    def resolver(self):
+        if self._resolver is None:
+            from app.services.identity_resolver import IdentityResolver
+            self._resolver = IdentityResolver(db_path=self.db_path)
+        return self._resolver
+
+    @property
+    def aggregator(self):
+        if self._aggregator is None:
+            from app.services.financial_aggregator import FinancialAggregator
+            self._aggregator = FinancialAggregator(db_path=self.db_path, identity_resolver=self.resolver)
+        return self._aggregator
+
+    @property
+    def trend_detector(self):
+        if self._trend_detector is None:
+            from app.services.trend_detector import TrendDetector
+            self._trend_detector = TrendDetector(db_path=self.db_path, identity_resolver=self.resolver)
+        return self._trend_detector
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Create a connection with sqlite3.Row row_factory."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _get_customer_inquiry_history(self, customer_id: int) -> List[Dict[str, Any]]:
+        """Retrieve all successful inquiries for a customer in chronological order."""
+        if not os.path.exists(self.db_path):
+            return []
+        conn = None
+        try:
+            conn = self._get_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id, in_transit_amount, bounced_amount, cleared_amount, inquiry_time
+                FROM pasargad_inquiries
+                WHERE customer_id = ? AND status = 'success'
+                ORDER BY id ASC
+            """, (customer_id,))
+            return [dict(r) for r in cur.fetchall()]
+        except Exception as exc:
+            logger.warning("Error fetching inquiry history for customer %s: %s", customer_id, exc)
+            return []
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def _compute_customer_volatility(self, customer_id: int) -> float:
+        """Calculate coefficient of variation (CV) of in-transit exposure across inquiry history."""
+        hist = self._get_customer_inquiry_history(customer_id)
+        if len(hist) <= 1:
+            return 0.0
+        amounts = [float(h.get("in_transit_amount") or 0.0) for h in hist]
+        mean_val = statistics.mean(amounts)
+        if mean_val <= 0:
+            return 0.0
+        stdev_val = statistics.stdev(amounts)
+        cv = stdev_val / (mean_val + 1.0)
+        return cv
+
+    def calculate_customer_risk(self, customer_data: Union[Dict[str, Any], int]) -> Dict[str, Any]:
+        """
+        Calculates 0-100 risk score with 7 components, applies mandatory floors,
+        and returns tier and breakdown.
+        Adheres strictly to PROJECT.md interface contract.
+        Accepts either a customer_id (int) or a customer dictionary.
+        """
+        if isinstance(customer_data, int):
+            cid = customer_data
+            cust_dict = {"customer_id": cid}
+        elif isinstance(customer_data, dict):
+            cust_dict = dict(customer_data)
+            cid = cust_dict.get("customer_id") or cust_dict.get("id")
+        else:
+            raise ValueError(f"Invalid customer_data type: {type(customer_data)}")
+
+        # Initialize default identity fields
+        full_name = cust_dict.get("full_name") or cust_dict.get("customer_name") or ""
+        national_id = cust_dict.get("national_id")
+        identity_status = cust_dict.get("identity_status")
+        freshness_status = cust_dict.get("freshness_status")
+
+        # Load from DB/services if cid is provided and data missing
+        profile = None
+        if cid is not None and os.path.exists(self.db_path):
+            try:
+                profile = self.aggregator.get_customer_financial_profile(cid)
+                if profile:
+                    if not full_name:
+                        full_name = profile.get("full_name", "")
+                    if not national_id:
+                        national_id = profile.get("national_id")
+                    if not identity_status:
+                        identity_status = profile.get("identity_status")
+            except Exception as exc:
+                logger.warning("Error fetching profile for customer %s: %s", cid, exc)
+
+        # Financial values
+        if "bounced_amount" in cust_dict:
+            bounced = float(cust_dict["bounced_amount"] or 0.0)
+        elif "bank_bounced_amount" in cust_dict:
+            bounced = float(cust_dict["bank_bounced_amount"] or 0.0)
+        elif profile:
+            bounced = float(profile.get("bank_bounced_amount") or 0.0)
+        else:
+            bounced = 0.0
+
+        if "fund_total_amount" in cust_dict:
+            fund = float(cust_dict["fund_total_amount"] or 0.0)
+        elif "fund_cheques_amount" in cust_dict:
+            fund = float(cust_dict["fund_cheques_amount"] or 0.0)
+        elif profile:
+            fund = float(profile.get("fund_total_amount") or 0.0)
+        else:
+            fund = 0.0
+
+        if "in_transit_amount" in cust_dict:
+            in_transit = float(cust_dict["in_transit_amount"] or 0.0)
+        elif "bank_in_transit_amount" in cust_dict:
+            in_transit = float(cust_dict["bank_in_transit_amount"] or 0.0)
+        elif profile:
+            in_transit = float(profile.get("bank_in_transit_amount") or 0.0)
+        else:
+            in_transit = 0.0
+
+        # Persistence period count
+        if "period_count" in cust_dict:
+            period_count = int(cust_dict["period_count"] or 0)
+        elif "bounce_period_count" in cust_dict:
+            period_count = int(cust_dict["bounce_period_count"] or 0)
+        elif cid is not None and os.path.exists(self.db_path):
+            p_info = self.trend_detector.classify_bounce_persistence(cid)
+            period_count = p_info["period_count"]
+        else:
+            period_count = 0
+
+        # Recent bounced increase (delta_bounced)
+        if "delta_bounced" in cust_dict:
+            delta_bounced = max(0.0, float(cust_dict["delta_bounced"] or 0.0))
+        elif "recent_bounced_increase" in cust_dict:
+            delta_bounced = max(0.0, float(cust_dict["recent_bounced_increase"] or 0.0))
+        elif cid is not None and os.path.exists(self.db_path):
+            # Check transitions from trend detector
+            transitions = self.trend_detector.detect_transitions()
+            matched_t = [t for t in transitions if t["customer_id"] == cid]
+            if matched_t:
+                delta_bounced = max(0.0, float(matched_t[0]["delta_bounced"]))
+            else:
+                hist = self._get_customer_inquiry_history(cid)
+                if len(hist) > 1:
+                    delta_bounced = max(0.0, float(hist[-1].get("bounced_amount", 0.0) - hist[0].get("bounced_amount", 0.0)))
+                else:
+                    delta_bounced = 0.0
+        else:
+            delta_bounced = 0.0
+
+        # Rapid in-flight growth (delta_in_transit)
+        if "delta_in_transit" in cust_dict:
+            delta_in_transit = max(0.0, float(cust_dict["delta_in_transit"] or 0.0))
+        elif "in_flight_growth" in cust_dict:
+            delta_in_transit = max(0.0, float(cust_dict["in_flight_growth"] or 0.0))
+        elif cid is not None and os.path.exists(self.db_path):
+            hist = self._get_customer_inquiry_history(cid)
+            if len(hist) > 1:
+                delta_in_transit = max(0.0, float(hist[-1].get("in_transit_amount", 0.0) - hist[0].get("in_transit_amount", 0.0)))
+            else:
+                delta_in_transit = 0.0
+        else:
+            delta_in_transit = 0.0
+
+        # Volatility / instability
+        if "volatility" in cust_dict:
+            volatility = float(cust_dict["volatility"] or 0.0)
+        elif cid is not None and os.path.exists(self.db_path):
+            volatility = self._compute_customer_volatility(cid)
+        else:
+            volatility = 0.0
+
+        # Data quality and freshness
+        if not identity_status and cid is not None and os.path.exists(self.db_path):
+            cust_obj = self.resolver.get_customer_by_id(cid)
+            if cust_obj:
+                identity_status = cust_obj.get("identity_status")
+
+        if not freshness_status and cid is not None and os.path.exists(self.db_path):
+            fresh_obj = self.trend_detector.get_customer_freshness(cid)
+            freshness_status = fresh_obj.get("status")
+
+        # ── Compute the 7 Sub-Indices (0 to 100 each) ──
+        c1 = compute_component_bounced_amount(bounced)
+        c2 = compute_component_persistence_periods(period_count, bounced)
+        c3 = compute_component_recent_bounced_increase(delta_bounced)
+        active_commitment = fund + in_transit
+        c4 = compute_component_bounced_ratio(bounced, active_commitment)
+        c5 = compute_component_in_flight_growth(delta_in_transit)
+        c6 = compute_component_volatility(volatility)
+        c7 = compute_component_data_quality(identity_status, freshness_status)
+
+        # ── Weighted Raw Score (Sum = 100%) ──
+        w1 = WEIGHT_CURRENT_BOUNCED * c1
+        w2 = WEIGHT_PERSISTENCE_PERIODS * c2
+        w3 = WEIGHT_RECENT_BOUNCED_INCREASE * c3
+        w4 = WEIGHT_BOUNCED_TO_ACTIVE_RATIO * c4
+        w5 = WEIGHT_RAPID_IN_FLIGHT_GROWTH * c5
+        w6 = WEIGHT_VOLATILITY * c6
+        w7 = WEIGHT_DATA_QUALITY * c7
+
+        raw_score = w1 + w2 + w3 + w4 + w5 + w6 + w7
+
+        # ── Mandatory Floors Evaluation ──
+        applied_floor, floor_rule = evaluate_mandatory_floor(bounced, period_count)
+        is_floor_triggered = (applied_floor > raw_score)
+
+        final_score = max(raw_score, applied_floor)
+        final_score = max(0.0, min(100.0, final_score))
+
+        # ── Risk Tier Classification ──
+        tier_data = classify_risk_tier(final_score)
+
+        # Persistence category label
+        if period_count >= 6:
+            pers_cat = "CHRONIC"
+        elif period_count >= 3:
+            pers_cat = "INTERMITTENT"
+        elif period_count >= 1:
+            pers_cat = "NEW"
+        else:
+            pers_cat = "CLEAN"
+
+        return {
+            "customer_id": cid,
+            "full_name": full_name,
+            "national_id": national_id,
+            "identity_status": identity_status or "VERIFIED",
+            "freshness_status": freshness_status or "FRESH_SUCCESS",
+            # Components breakdown (0-100 scale)
+            "components": {
+                "c1_current_bounced": round(c1, 2),
+                "c2_persistence_periods": round(c2, 2),
+                "c3_recent_bounced_increase": round(c3, 2),
+                "c4_bounced_to_active_ratio": round(c4, 2),
+                "c5_rapid_in_flight_growth": round(c5, 2),
+                "c6_volatility": round(c6, 2),
+                "c7_data_quality": round(c7, 2),
+            },
+            # Weighted contributions
+            "weighted_components": {
+                "w1_current_bounced": round(w1, 2),
+                "w2_persistence_periods": round(w2, 2),
+                "w3_recent_bounced_increase": round(w3, 2),
+                "w4_bounced_to_active_ratio": round(w4, 2),
+                "w5_rapid_in_flight_growth": round(w5, 2),
+                "w6_volatility": round(w6, 2),
+                "w7_data_quality": round(w7, 2),
+            },
+            # Score results
+            "raw_score": round(raw_score, 2),
+            "mandatory_floor": applied_floor,
+            "floor_rule": floor_rule,
+            "is_floor_triggered": is_floor_triggered,
+            "final_score": round(final_score, 1),
+            "final_score_unrounded": final_score,
+            # Tier classification & operational actions
+            "tier_code": tier_data["tier_code"],
+            "tier_name_fa": tier_data["tier_name_fa"],
+            "tier_name_en": tier_data["tier_name_en"],
+            "score_range": tier_data["score_range"],
+            "action_recommendation": tier_data["action_recommendation"],
+            # Financial metrics
+            "bounced_amount": bounced,
+            "fund_cheques_amount": fund,
+            "in_transit_amount": in_transit,
+            "period_count": period_count,
+            "persistence_category": pers_cat,
+        }
+
+    def get_all_customer_risk_scores(self) -> List[Dict[str, Any]]:
+        """
+        Computes risk scores for all 48 canonical customers from IdentityResolver.
+        Returns list of scored customer dictionaries sorted by final_score descending.
+        """
+        canonical = self.resolver.get_canonical_customers()
+        scored_customers = []
+        for c in canonical:
+            res = self.calculate_customer_risk(c["id"])
+            scored_customers.append(res)
+        scored_customers.sort(key=lambda x: x["final_score"], reverse=True)
+        return scored_customers
+
+    def compute_hhi_concentration(self, high_risk_customers: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """
+        Calculates HHI index and top 10 issuers share:
+        - Rank top 10 issuers by bounced debt
+        - Calculate debt shares s_i = bounced_i / total_bounced
+        - Calculate HHI = sum((s_i * 100)^2) (~1536.4)
+        - Calculate cumulative concentration of top 10 issuers (~98.22%)
+        Adheres strictly to PROJECT.md interface contract.
+        """
+        if high_risk_customers is None:
+            all_scored = self.get_all_customer_risk_scores()
+            bounced_customers = [c for c in all_scored if c.get("bounced_amount", 0.0) > 0]
+        else:
+            bounced_customers = [
+                c for c in high_risk_customers
+                if (c.get("bounced_amount") if c.get("bounced_amount") is not None else c.get("bank_bounced_amount", 0.0)) > 0
+            ]
+
+        if not bounced_customers:
+            return {
+                "total_bounced": 0.0,
+                "bounced_issuers_count": 0,
+                "top_10_issuers_count": 0,
+                "top_10_bounced_amount": 0.0,
+                "top_10_concentration_pct": 0.0,
+                "hhi": 0.0,
+                "hhi_top10": 0.0,
+                "hhi_raw": 0.0,
+                "hhi_top10_raw": 0.0,
+                "concentration_classification": "ZERO_BOUNCED",
+                "top_10_issuers": []
+            }
+
+        def _get_bounced(c):
+            return float(c.get("bounced_amount") if c.get("bounced_amount") is not None else c.get("bank_bounced_amount", 0.0))
+
+        bounced_customers.sort(key=_get_bounced, reverse=True)
+        total_bounced = sum(_get_bounced(c) for c in bounced_customers)
+
+        if total_bounced <= 0:
+            return {
+                "total_bounced": 0.0,
+                "bounced_issuers_count": len(bounced_customers),
+                "top_10_issuers_count": 0,
+                "top_10_bounced_amount": 0.0,
+                "top_10_concentration_pct": 0.0,
+                "hhi": 0.0,
+                "hhi_top10": 0.0,
+                "hhi_raw": 0.0,
+                "hhi_top10_raw": 0.0,
+                "concentration_classification": "ZERO_BOUNCED",
+                "top_10_issuers": []
+            }
+
+        top_10_issuers = []
+        running_share_pct = 0.0
+
+        for rank, c in enumerate(bounced_customers[:10], 1):
+            b = _get_bounced(c)
+            debt_share = b / total_bounced
+            debt_share_pct = debt_share * 100.0
+            hhi_contrib = (debt_share_pct) ** 2
+            running_share_pct += debt_share_pct
+
+            top_10_issuers.append({
+                "rank": rank,
+                "customer_id": c.get("customer_id") or c.get("id"),
+                "full_name": c.get("full_name") or c.get("customer_name"),
+                "national_id": c.get("national_id"),
+                "bounced_amount": b,
+                "debt_share": debt_share,
+                "debt_share_pct": round(debt_share_pct, 2),
+                "hhi_contribution": round(hhi_contrib, 2),
+                "cumulative_share_pct": round(running_share_pct, 2),
+                "risk_score": c.get("final_score"),
+                "tier_code": c.get("tier_code"),
+                "tier_name_fa": c.get("tier_name_fa"),
+                "action_recommendation": c.get("action_recommendation"),
+                "persistence_category": c.get("persistence_category"),
+            })
+
+        top_10_bounced_amount = sum(_get_bounced(c) for c in bounced_customers[:10])
+        top_10_concentration_pct = (top_10_bounced_amount / total_bounced) * 100.0
+
+        hhi_all_raw = sum(((_get_bounced(c) / total_bounced) * 100.0) ** 2 for c in bounced_customers)
+        hhi_top10_raw = sum(((_get_bounced(c) / total_bounced) * 100.0) ** 2 for c in bounced_customers[:10])
+
+        return {
+            "total_bounced": total_bounced,
+            "bounced_issuers_count": len(bounced_customers),
+            "top_10_issuers_count": len(top_10_issuers),
+            "top_10_bounced_amount": top_10_bounced_amount,
+            "top_10_concentration_pct": round(top_10_concentration_pct, 2),
+            "hhi": round(hhi_all_raw, 2),
+            "hhi_top10": round(hhi_top10_raw, 2),
+            "hhi_raw": hhi_all_raw,
+            "hhi_top10_raw": hhi_top10_raw,
+            "concentration_classification": "MODERATE_TO_HIGH_CONCENTRATION",
+            "top_10_issuers": top_10_issuers,
+        }
+
+    def get_top_10_issuers(self) -> List[Dict[str, Any]]:
+        """Returns the ranked list of top 10 issuers by bounced debt with concentration metrics."""
+        return self.compute_hhi_concentration()["top_10_issuers"]
+
+    def get_portfolio_risk_summary(self) -> Dict[str, Any]:
+        """
+        Comprehensive portfolio risk executive summary for management dashboard (Sheet 01).
+        """
+        scores = self.get_all_customer_risk_scores()
+        hhi_data = self.compute_hhi_concentration(scores)
+        fund_audit = self.aggregator.get_fund_cheques_audit()
+        bank_summary = self.aggregator.get_portfolio_banking_summary()
+
+        tier_counts = {
+            TIER_LOW: 0,
+            TIER_NORMAL: 0,
+            TIER_WATCH: 0,
+            TIER_HIGH: 0,
+            TIER_IMMEDIATE_ACTION: 0,
+        }
+        tier_amounts = {
+            TIER_LOW: 0.0,
+            TIER_NORMAL: 0.0,
+            TIER_WATCH: 0.0,
+            TIER_HIGH: 0.0,
+            TIER_IMMEDIATE_ACTION: 0.0,
+        }
+        for s in scores:
+            t = s["tier_code"]
+            tier_counts[t] += 1
+            tier_amounts[t] += s.get("fund_cheques_amount", 0.0)
+
+        total_cust = len(scores)
+
+        tier_distribution = {}
+        for t_code, count in tier_counts.items():
+            info = TIER_LABELS[t_code]
+            tier_distribution[t_code] = {
+                "tier_code": t_code,
+                "name_fa": info["fa"],
+                "name_en": info["en"],
+                "range": info["range"],
+                "count": count,
+                "percentage": round((count / total_cust) * 100.0, 1) if total_cust > 0 else 0.0,
+                "fund_total_amount": tier_amounts[t_code],
+                "action": TIER_RECOMMENDATIONS[t_code]
+            }
+
+        all_finals = [s["final_score"] for s in scores]
+        return {
+            "total_canonical_customers": total_cust,
+            "total_fund_amount": fund_audit["total_amount"],
+            "total_fund_count": fund_audit["total_count"],
+            "total_bounced_amount": bank_summary["total_bounced"],
+            "total_in_transit_amount": bank_summary["total_in_transit"],
+            "total_cleared_amount": bank_summary["total_cleared"],
+            "bounced_customers_count": bank_summary["bounced_customers_count"],
+            "hhi": hhi_data["hhi"],
+            "hhi_top10": hhi_data["hhi_top10"],
+            "top_10_concentration_pct": hhi_data["top_10_concentration_pct"],
+            "average_risk_score": round(sum(all_finals) / len(all_finals), 1) if all_finals else 0.0,
+            "max_risk_score": max(all_finals) if all_finals else 0.0,
+            "min_risk_score": min(all_finals) if all_finals else 0.0,
+            "tier_distribution": tier_distribution,
+            "top_10_issuers": hhi_data["top_10_issuers"],
+        }
+
+
+# Convenience standalone functions
+def calculate_customer_risk(customer_data: Union[Dict[str, Any], int], db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Convenience functional interface for calculate_customer_risk."""
+    engine = RiskEngine(db_path=db_path)
+    return engine.calculate_customer_risk(customer_data)
+
+
+def compute_hhi_concentration(high_risk_customers: Optional[List[Dict[str, Any]]] = None, db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Convenience functional interface for compute_hhi_concentration."""
+    engine = RiskEngine(db_path=db_path)
+    return engine.compute_hhi_concentration(high_risk_customers)
+
+
+def get_top_10_issuers(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Convenience functional interface for get_top_10_issuers."""
+    engine = RiskEngine(db_path=db_path)
+    return engine.get_top_10_issuers()
+
