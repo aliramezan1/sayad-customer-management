@@ -37,15 +37,16 @@ HEADERS = {
 # ─────────────────────────────────────────────────────────────
 _BANK_GATE_LOCK = threading.Lock()
 _LAST_REQUEST_TIMESTAMP = 0.0
-_MIN_REQUEST_INTERVAL = 0.55  # Minimum 550ms between any 2 requests to bank
-_GLOBAL_COOLDOWN_UNTIL = 0.0  # Pause all bank traffic across all threads if 429 occurs
+_MIN_REQUEST_INTERVAL = 0.85  # Minimum 850ms between any 2 requests to bank (safe for ArvanCloud WAF)
+_GLOBAL_COOLDOWN_UNTIL = 0.0  # Pause all bank traffic if 429 occurs
+_LAST_COOLDOWN_LOG_TIME = 0.0
 
 def _acquire_bank_turn(cancel_event: threading.Event = None) -> bool:
     """
     Enforce minimum spacing between calls and handle global 429 cooldown.
     Supports cooperative cancellation via cancel_event. Returns False if cancelled.
     """
-    global _LAST_REQUEST_TIMESTAMP, _GLOBAL_COOLDOWN_UNTIL
+    global _LAST_REQUEST_TIMESTAMP, _GLOBAL_COOLDOWN_UNTIL, _LAST_COOLDOWN_LOG_TIME
     while True:
         if cancel_event and cancel_event.is_set():
             return False
@@ -53,12 +54,14 @@ def _acquire_bank_turn(cancel_event: threading.Event = None) -> bool:
             now = time.time()
             if now < _GLOBAL_COOLDOWN_UNTIL:
                 wait_sec = round(_GLOBAL_COOLDOWN_UNTIL - now, 2)
-                smart_logger.log(
-                    "WARN", "PASARGAD",
-                    f"خنک‌سازی ترافیک درگاه بانک: توقف موقت به مدت {wait_sec} ثانیه...",
-                    details={"cooldown_seconds": wait_sec}
-                )
-                sleep_chunk = min(wait_sec, 0.2)
+                if now - _LAST_COOLDOWN_LOG_TIME > 3.0:
+                    _LAST_COOLDOWN_LOG_TIME = now
+                    smart_logger.log(
+                        "WARN", "PASARGAD",
+                        f"خنک‌سازی ترافیک درگاه بانک (سرویس ابری): توقف موقت به مدت {wait_sec} ثانیه...",
+                        details={"cooldown_seconds": wait_sec}
+                    )
+                sleep_chunk = min(wait_sec, 0.5)
             else:
                 elapsed = now - _LAST_REQUEST_TIMESTAMP
                 if elapsed < _MIN_REQUEST_INTERVAL:
@@ -68,8 +71,8 @@ def _acquire_bank_turn(cancel_event: threading.Event = None) -> bool:
                     return True
         time.sleep(sleep_chunk)
 
-def _trigger_global_cooldown(seconds: float = 3.0):
-    """Trigger a global cooldown across all threads when 429 is encountered."""
+def _trigger_global_cooldown(seconds: float = 16.0):
+    """Trigger a global cooldown when 429 is encountered (ArvanCloud window is ~15s)."""
     global _GLOBAL_COOLDOWN_UNTIL
     with _BANK_GATE_LOCK:
         _GLOBAL_COOLDOWN_UNTIL = max(_GLOBAL_COOLDOWN_UNTIL, time.time() + seconds)
@@ -78,9 +81,9 @@ def _trigger_global_cooldown(seconds: float = 3.0):
 def create_pasargad_session():
     session = requests.Session()
     retry_strategy = Retry(
-        total=3,
-        backoff_factor=0.6,
-        status_forcelist=[500, 502, 503, 504],
+        total=2,
+        backoff_factor=0.5,
+        status_forcelist=[502, 503, 504],  # NOTE: 500 must NOT be in status_forcelist because Pasargad returns 500 for status 524 (not in cartable)
         raise_on_status=False
     )
     adapter = HTTPAdapter(
@@ -248,12 +251,12 @@ def query_single_holder(
                 }
 
             elif response.status_code == 429:
-                # Exponential Backoff with Random Jitter
-                wait_time = round((1.2 ** attempt) + random.uniform(0.2, 0.6), 2)
+                # ArvanCloud WAF cooldown window (approx 15-18s)
+                wait_time = round(16.0 + random.uniform(0.5, 2.0), 2)
                 _trigger_global_cooldown(wait_time)
                 smart_logger.log(
                     "WARN", "PASARGAD",
-                    f"ترافیک درگاه بانک (۴۲۹) - اعمال خنک‌کننده و Jitter تصادفی ({wait_time} ثانیه) - تلاش مجدد ({attempt}/{retry_count}) برای {clean_id_code}",
+                    f"ترافیک درگاه بانک (۴۲۹) - اعمال خنک‌کننده سرور ابری ({wait_time} ثانیه) - تلاش مجدد ({attempt}/{retry_count}) برای {clean_id_code}",
                     sayadi_id=clean_sayadi,
                     details={"holder": clean_id_code, "status": 429, "attempt": attempt, "wait_time": wait_time},
                     duration_ms=duration_ms
@@ -268,7 +271,7 @@ def query_single_holder(
                                 "holder_national_id": clean_id_code,
                                 "message": "عملیات استعلام متوقف شد."
                             }
-                        time.sleep(min(0.2, max(0.01, sleep_end - time.time())))
+                        time.sleep(min(0.5, max(0.01, sleep_end - time.time())))
                     continue
                 break
 
@@ -528,58 +531,54 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
     if res1["status"] == "rate_limited":
         had_rate_limit = True
     else:
-        # ── STAGE 2: Parallel Cartable Pool ───────────────────────────
-        smart_logger.log(
-            "INFO", "PASARGAD",
-            f"مرحله ۲ پارتو (Parallel Cartable Pool): چک در کارتابل «{stage1_holder['full_name']}» نبود ({res1.get('message', '')}). بررسی موازی {len(remaining_holders)} دارنده دیگر با ThreadPoolExecutor(max_workers=3)...",
-            sayadi_id=clean_sayadi,
-            customer_name=customer_name or ""
-        )
+        # Check if this cheque has already passed its due date
+        days_due = calculate_days_until_due(cheque_date) if cheque_date else None
+        is_passed = (days_due is not None and days_due < 0)
 
-        cancel_event = threading.Event()
-        all_errors = (res1["status"] == "error")
+        # If cheque has already passed due date and wasn't in cartable, it is already settled/passed
+        # Also, if preferred_holder was explicitly recorded on the cheque, do not blindly query unrelated holders
+        should_cascade = not is_passed and not (preferred_holder_id and ch and ch["holder_id"])
 
-        def _pool_worker(holder_info):
-            if cancel_event.is_set():
-                return None
-            w_res = query_single_holder(
-                clean_sayadi,
-                holder_info["national_id"],
-                cancel_event=cancel_event
+        if should_cascade and remaining_holders:
+            smart_logger.log(
+                "INFO", "PASARGAD",
+                f"مرحله ۲ پارتو: چک در کارتابل «{stage1_holder['full_name']}» نبود ({res1.get('message', '')}). بررسی به ترتیب {len(remaining_holders)} دارنده دیگر صندوق...",
+                sayadi_id=clean_sayadi,
+                customer_name=customer_name or ""
             )
-            return (holder_info, w_res)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            future_to_holder = {executor.submit(_pool_worker, h): h for h in remaining_holders}
+            cancel_event = threading.Event()
+            all_errors = (res1["status"] == "error")
 
-            for future in concurrent.futures.as_completed(future_to_holder):
+            for h in remaining_holders:
                 if cancel_event.is_set():
                     break
-                try:
-                    result_tuple = future.result()
-                    if not result_tuple:
-                        continue
-                    h, res = result_tuple
-
-                    if res.get("status") == "success":
-                        successful_res = res
-                        matched_holder = h
-                        cancel_event.set()
-                        # Cancel remaining queued futures
-                        for f in future_to_holder:
-                            f.cancel()
-                        break
-                    elif res.get("status") == "rate_limited":
-                        had_rate_limit = True
-                        last_error_msg = res.get("message", "")
-                        all_errors = False
-                    elif res.get("status") == "not_in_cartable":
-                        all_errors = False
-                        last_error_msg = res.get("message", "")
-                    elif res.get("status") != "cancelled":
-                        last_error_msg = res.get("message", "")
-                except Exception as exc:
-                    last_error_msg = str(exc)
+                res = query_single_holder(
+                    clean_sayadi,
+                    h["national_id"],
+                    cancel_event=cancel_event
+                )
+                if res.get("status") == "success":
+                    successful_res = res
+                    matched_holder = h
+                    break
+                elif res.get("status") == "rate_limited":
+                    had_rate_limit = True
+                    last_error_msg = res.get("message", "")
+                    all_errors = False
+                    break  # Stop hammering if bank rate-limits
+                elif res.get("status") == "not_in_cartable":
+                    all_errors = False
+                    last_error_msg = res.get("message", "")
+                elif res.get("status") != "cancelled":
+                    last_error_msg = res.get("message", "")
+        else:
+            if is_passed:
+                smart_logger.log(
+                    "DEBUG", "PASARGAD",
+                    f"چک {clean_sayadi} سررسید گذشته است ({cheque_date}) و در کارتابل نیست؛ معاف از بررسی سایر دارندگان.",
+                    sayadi_id=clean_sayadi
+                )
 
     if successful_res and matched_holder:
         # Stage 2 parallel query matched a holder!
