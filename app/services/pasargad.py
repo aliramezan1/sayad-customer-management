@@ -502,6 +502,17 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
         ))
 
         cursor.execute("UPDATE cheques SET holder_id = ?, updated_at = datetime('now', 'localtime') WHERE sayadi_id = ?", (stage1_holder["id"], clean_sayadi))
+
+        # Sync customer national_id and credit_color if inquiry shows bounced amount
+        if customer_id:
+            owners_list = res1.get("owners_info") or []
+            first_owner = owners_list[0] if owners_list and isinstance(owners_list, list) and len(owners_list) > 0 else {}
+            owner_nid = str(first_owner.get("idCode") or "").strip()
+            if owner_nid:
+                cursor.execute("UPDATE customers SET national_id = ? WHERE id = ? AND (national_id IS NULL OR national_id = '')", (owner_nid, customer_id))
+            if float(res1.get("bounced_amount") or 0) > 0 or int(res1.get("bounced_count") or 0) > 0:
+                cursor.execute("UPDATE customers SET credit_color = 'قرمز', updated_at = datetime('now', 'localtime') WHERE id = ?", (customer_id,))
+
         conn.commit()
 
         res1["holder_id"] = stage1_holder["id"]
@@ -536,8 +547,8 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
         is_passed = (days_due is not None and days_due < 0)
 
         # If cheque has already passed due date and wasn't in cartable, it is already settled/passed
-        # Also, if preferred_holder was explicitly recorded on the cheque, do not blindly query unrelated holders
-        should_cascade = not is_passed and not (preferred_holder_id and ch and ch["holder_id"])
+        # If Stage 1 did not find cheque in primary/preferred holder, cascade through remaining holders
+        should_cascade = not is_passed
 
         if should_cascade and remaining_holders:
             smart_logger.log(
@@ -611,6 +622,17 @@ def cascade_pasargad_inquiry(sayadi_id: str, preferred_holder_id: int = None, cu
         ))
 
         cursor.execute("UPDATE cheques SET holder_id = ?, updated_at = datetime('now', 'localtime') WHERE sayadi_id = ?", (matched_holder["id"], clean_sayadi))
+
+        # Sync customer national_id and credit_color if inquiry shows bounced amount
+        if customer_id:
+            owners_list = successful_res.get("owners_info") or []
+            first_owner = owners_list[0] if owners_list and isinstance(owners_list, list) and len(owners_list) > 0 else {}
+            owner_nid = str(first_owner.get("idCode") or "").strip()
+            if owner_nid:
+                cursor.execute("UPDATE customers SET national_id = ? WHERE id = ? AND (national_id IS NULL OR national_id = '')", (owner_nid, customer_id))
+            if float(successful_res.get("bounced_amount") or 0) > 0 or int(successful_res.get("bounced_count") or 0) > 0:
+                cursor.execute("UPDATE customers SET credit_color = 'قرمز', updated_at = datetime('now', 'localtime') WHERE id = ?", (customer_id,))
+
         conn.commit()
 
         successful_res["holder_id"] = matched_holder["id"]
