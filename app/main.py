@@ -1094,12 +1094,12 @@ def cancel_scheduler_batch(
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/export/excel")
 def export_excel():
-    """Generate and download latest comprehensive 3-sheet Excel report."""
+    """Generate and download latest comprehensive 10-sheet customer-centric credit Excel report."""
     from app.services.excel_exporter import generate_comprehensive_excel
     excel_bytes = generate_comprehensive_excel()
 
     headers = {
-        'Content-Disposition': 'attachment; filename="sayad_customers_full_report.xlsx"'
+        'Content-Disposition': 'attachment; filename="sayad_credit_report_14050615.xlsx"; filename*=UTF-8\'\'%DA%AF%D8%B2%D8%A7%D8%B1%D8%B4_%D8%AC%D8%A7%D9%85%D8%B9_%D8%A7%D8%B9%D8%AA%D8%A8%D8%A7%D8%B1%DB%8C_%D9%85%D8%B4%D8%AA%D8%B1%DB%8C%D8%A7%D9%86_%D8%B5%DB%8C%D8%A7%D8%AF%DB%8C_%DB%B1%DB%B4%DB%B0%DB%B5%DB%B0%DB%B6%DB%B1%DB%B5.xlsx'
     }
     return Response(
         content=excel_bytes,
