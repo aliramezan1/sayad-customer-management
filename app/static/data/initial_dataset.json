@@ -98,7 +98,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اميرحسين عليپور",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -111,7 +111,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "ملک هاشميه",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -124,7 +124,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -137,7 +137,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -150,7 +150,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -176,7 +176,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي عليرضا يعقوبي خريدار تارا",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -189,7 +189,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": null,
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -202,7 +202,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -214,8 +214,8 @@
       "phone": null,
       "address": null,
       "notes": null,
-      "credit_color": "قرمز",
-      "risk_score": 80,
+      "credit_color": "سفید",
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -228,7 +228,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -254,7 +254,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -267,7 +267,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -280,7 +280,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "چک تمديد احمد زحمتکش",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -292,8 +292,8 @@
       "phone": null,
       "address": null,
       "notes": null,
-      "credit_color": "قرمز",
-      "risk_score": 80,
+      "credit_color": "سفید",
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -306,7 +306,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 80,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -314,12 +314,12 @@
     {
       "id": 19,
       "full_name": "مرتضي مؤذن",
-      "national_id": "6430003159",
+      "national_id": "0920630138",
       "phone": null,
       "address": null,
       "notes": null,
-      "credit_color": "قرمز",
-      "risk_score": 80,
+      "credit_color": "سفید",
+      "risk_score": 10,
       "original_name_alias": "آقاي مرتضي موذن",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -332,7 +332,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اشرافيان و دشت بياض",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -345,7 +345,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -358,7 +358,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "مددي خريدار 207",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -371,7 +371,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -384,7 +384,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "آقاي مرتضي موذن",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -397,7 +397,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -423,7 +423,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -435,8 +435,8 @@
       "phone": null,
       "address": null,
       "notes": null,
-      "credit_color": "قرمز",
-      "risk_score": 80,
+      "credit_color": "سفید",
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -462,7 +462,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -475,7 +475,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -488,7 +488,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "محمد بزرگر",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -501,7 +501,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي افشاري خريدار کوييک نقره اي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -514,7 +514,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "ميلاد داوري",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -527,7 +527,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -540,7 +540,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -553,7 +553,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اشرافيان و دشت بياض",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -566,7 +566,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -579,7 +579,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -592,7 +592,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -605,7 +605,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -618,7 +618,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -631,7 +631,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -657,7 +657,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 95,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -670,7 +670,7 @@
       "address": null,
       "notes": null,
       "credit_color": "قرمز",
-      "risk_score": 90,
+      "risk_score": 85,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-06 18:54:14"
@@ -683,7 +683,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -696,7 +696,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -709,7 +709,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -722,7 +722,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي حسين زاده خريدار کوييک 1402ار",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -748,7 +748,7 @@
       "address": null,
       "notes": null,
       "credit_color": "سفید",
-      "risk_score": 5,
+      "risk_score": 10,
       "original_name_alias": "اقاي ضيافتي",
       "created_at": "2026-08-28 10:00:00",
       "updated_at": "2026-09-04 00:00:00"
@@ -757,7 +757,7 @@
   "cheques": [
     {
       "id": 1,
-      "customer_id": 1,
+      "customer_id": 16,
       "sayadi_id": "",
       "cheque_number": "1113333",
       "amount": 2000000000.0,
@@ -821,7 +821,7 @@
     },
     {
       "id": 5,
-      "customer_id": 17,
+      "customer_id": 5,
       "sayadi_id": "9700040200262950",
       "cheque_number": "695631",
       "amount": 7500000000.0,
@@ -885,7 +885,7 @@
     },
     {
       "id": 9,
-      "customer_id": 8,
+      "customer_id": 16,
       "sayadi_id": "",
       "cheque_number": "14444",
       "amount": 870000000.0,
@@ -1701,7 +1701,7 @@
     },
     {
       "id": 60,
-      "customer_id": 44,
+      "customer_id": 17,
       "sayadi_id": "4204010168700706",
       "cheque_number": "076149",
       "amount": 11520000000.0,
@@ -2309,7 +2309,7 @@
     },
     {
       "id": 98,
-      "customer_id": 19,
+      "customer_id": 21,
       "sayadi_id": "9330040056179006",
       "cheque_number": "824589",
       "amount": 2670000000.0,
