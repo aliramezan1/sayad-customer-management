@@ -1094,40 +1094,18 @@ def cancel_scheduler_batch(
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/export/excel")
 def export_excel():
-    """Generate and download latest comprehensive Excel report."""
-    conn = get_db()
-    query = """
-    SELECT 
-        c.full_name as "نام مشتری",
-        c.credit_color as "وضعیت اعتباری (رنگ)",
-        ch.sayadi_id as "شناسه صیادی",
-        ch.cheque_number as "شماره چک",
-        ch.amount as "مبلغ (ریال)",
-        ch.cheque_date as "تاریخ سررسید",
-        ch.bank_name as "بانک صادرکننده",
-        h.full_name as "دارنده چک (هولدر)",
-        (SELECT in_transit_amount FROM pasargad_inquiries WHERE sayadi_id = ch.sayadi_id ORDER BY id DESC LIMIT 1) as "مبلغ چک در راه (پاسارگاد)",
-        (SELECT cleared_amount FROM pasargad_inquiries WHERE sayadi_id = ch.sayadi_id ORDER BY id DESC LIMIT 1) as "مبلغ رفع سوءاثر (پاسارگاد)",
-        (SELECT bounced_amount FROM pasargad_inquiries WHERE sayadi_id = ch.sayadi_id ORDER BY id DESC LIMIT 1) as "مبلغ برگشتی (پاسارگاد)"
-    FROM cheques ch
-    LEFT JOIN customers c ON ch.customer_id = c.id
-    LEFT JOIN holders h ON ch.holder_id = h.id
-    ORDER BY c.full_name ASC, ch.cheque_date ASC
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+    """Generate and download latest comprehensive 3-sheet Excel report."""
+    from app.services.excel_exporter import generate_comprehensive_excel
+    excel_bytes = generate_comprehensive_excel()
 
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='گزارش جامع مشتریان و چک‌ها', index=False)
-        ws = writer.sheets['گزارش جامع مشتریان و چک‌ها']
-        ws.views.sheetView[0].rightToLeft = True
-
-    output.seek(0)
     headers = {
         'Content-Disposition': 'attachment; filename="sayad_customers_full_report.xlsx"'
     }
-    return StreamingResponse(output, headers=headers, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    return Response(
+        content=excel_bytes,
+        headers=headers,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 # ─────────────────────────────────────────────────────────────
 # 🔐 RBAC Identity & Role Management API
