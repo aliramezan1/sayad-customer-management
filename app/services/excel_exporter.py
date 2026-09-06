@@ -8,6 +8,7 @@ Features:
 - Full Persian/RTL layout, professional styling, auto-column widths, and formatted monetary values.
 """
 import io
+import json
 import os
 import sqlite3
 from datetime import datetime
@@ -113,14 +114,19 @@ def generate_comprehensive_excel(output_path: Optional[str] = None) -> bytes:
     total_in_transit = 0.0
     total_cleared = 0.0
     total_bounced = 0.0
-    success_count = 0
-    unchanged_count = 0
+    success_today_count = 0
+    preserved_count = 0
     passed_count = 0
+    not_in_cartable_count = 0
     exempt_count = 0
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
 
     for ch in cheques_data:
         sayadi = str(ch["sayadi_id"] or "").strip()
         inq_stat = str(ch.get("inquiry_status") or "").lower()
+        inq_time = str(ch.get("inquiry_time") or "").strip()
+        is_today = inq_time.startswith(today_str)
         d_due = calculate_days_until_due(ch.get("cheque_date"))
         
         in_t = float(ch.get("in_transit_amount") or 0)
@@ -133,12 +139,14 @@ def generate_comprehensive_excel(output_path: Optional[str] = None) -> bytes:
 
         if len(sayadi) != 16:
             exempt_count += 1
-        elif inq_stat == "success":
-            success_count += 1
+        elif inq_stat == "success" and is_today:
+            success_today_count += 1
+        elif inq_stat == "success" and not is_today:
+            preserved_count += 1
         elif d_due is not None and d_due < 0:
             passed_count += 1
         else:
-            unchanged_count += 1
+            not_in_cartable_count += 1
 
     # Credit colors breakdown
     credit_colors = {}
@@ -202,9 +210,10 @@ def generate_comprehensive_excel(output_path: Optional[str] = None) -> bytes:
         ("مجموع مبلغ چک‌های در راه استعلام‌شده", total_in_transit, "ریال", f"{total_in_transit / 10_000_000:,.0f} تومان (تعهدات صادرکنندگان در شبکه بانکی)"),
         ("مجموع مبالغ رفع سوءاثر شده صادرکنندگان", total_cleared, "ریال", f"{total_cleared / 10_000_000:,.0f} تومان (سابقه تسویه موفق)"),
         ("مجموع مبالغ چک‌های برگشتی صادرکنندگان", total_bounced, "ریال", f"{total_bounced / 10_000_000:,.0f} تومان (چک‌های برگشتی ثبت‌شده بانک مرکزی)"),
-        ("استعلام‌های موفق لحظه‌ای درگاه", success_count, "فقره", "استعلام مستقیم موفق از وب‌سرویس پاسارگاد امروز"),
-        ("چک‌های با حفظ سابقه معتبر", unchanged_count, "فقره", "حفظ ارقام معتبر پیشین بر اساس پایگاه داده"),
-        ("چک‌های تسویه یا سررسید گذشته", passed_count, "فقره", "سررسید گذشته و تسویه‌شده خارج از کارتابل"),
+        ("استعلام‌های زنده و بروز امروز درگاه", success_today_count, "فقره", "استعلام مستقیم موفق از وب‌سرویس بانک پاسارگاد در تاریخ امروز با کد رهگیری زنده"),
+        ("چک‌های با حفظ تاریخچه معتبر قبلی", preserved_count, "فقره", "حفظ ارقام معتبر آخرین استعلام موفق (برای جلوگیری از صفر شدن داده‌ها)"),
+        ("چک‌های خارج از کارتابل / عدم دسترسی", not_in_cartable_count, "فقره", "عدم حضور چک در کارتابل ۹ دارنده در استعلام گروهی امروز"),
+        ("چک‌های سررسید گذشته و منقضی", passed_count, "فقره", "سررسید گذشته و تسویه‌شده خارج از چرخه بانکی جاری"),
         ("اسناد معاف از استعلام صیادی", exempt_count, "فقره", "سفته‌ها و اسناد ضمانتی فاقد شناسه ۱۶ رقمی صیاد"),
     ]
 
@@ -389,20 +398,35 @@ def generate_comprehensive_excel(output_path: Optional[str] = None) -> bytes:
         ch_date = _format_jalali_date(ch.get("cheque_date"))
         days_due = calculate_days_until_due(ch.get("cheque_date"))
         inq_status = str(ch.get("inquiry_status") or "").lower()
+        inq_time = str(ch.get("inquiry_time") or "").strip()
+        is_today = inq_time.startswith(today_str)
+
+        trace_id = ""
+        if ch.get("raw_response"):
+            try:
+                raw_obj = json.loads(ch["raw_response"]) if isinstance(ch["raw_response"], str) else ch["raw_response"]
+                trace_id = str(raw_obj.get("requestTraceId") or raw_obj.get("traceId") or "")
+            except Exception:
+                trace_id = ""
 
         # Status translation
         if len(sayadi) != 16:
             status_text = "سند سفته / فاقد صیاد (معاف)"
             msg_text = "سند تضمینی یا سفته فاقد شناسه ۱۶ رقمی صیاد"
-        elif inq_status == "success":
-            status_text = "موفق (درگاه زنده)"
-            msg_text = "استعلام زنده از درگاه پاسارگاد با موفقیت ثبت شد"
+        elif inq_status == "success" and is_today:
+            status_text = "استعلام زنده امروز (بروز)"
+            trace_info = f" (کد پیگیری: {trace_id})" if trace_id else ""
+            msg_text = f"استعلام زنده امروز درگاه پاسارگاد در ساعت {inq_time.split(' ')[-1] if ' ' in inq_time else inq_time}{trace_info}"
+        elif inq_status == "success" and not is_today:
+            status_text = "حفظ تاریخچه معتبر قبلی"
+            trace_info = f" (کد پیگیری قبلی: {trace_id})" if trace_id else ""
+            msg_text = f"عدم حضور در کارتابل امروز؛ حفظ آخرین استعلام معتبر ({inq_time}){trace_info}"
         elif days_due is not None and days_due < 0:
             status_text = "سررسید گذشته / تسویه"
-            msg_text = f"سررسید چک در تاریخ {ch_date} منقضی شده و از کارتابل خارج است"
+            msg_text = f"سررسید چک در تاریخ {ch_date} منقضی شده و از کارتابل جاری خارج است"
         else:
-            status_text = "حفظ تاریخچه معتبر"
-            msg_text = "اطلاعات معتبر آخرین استعلام موفق حفظ شد"
+            status_text = "عدم حضور در کارتابل ۹ دارنده"
+            msg_text = "در استعلام گروهی امروز بررسی شد ولی در کارتابل هیچ‌یک از ۹ دارنده یافت نشد"
 
         # Due status text
         if days_due is None:
