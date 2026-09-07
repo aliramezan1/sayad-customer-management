@@ -30,11 +30,12 @@ logger = logging.getLogger("app.services.identity_resolver")
 
 # Constants
 DISAMBIGUATED_NATIONAL_ID = "0933387075"
-UNRESOLVED_CUSTOMER_IDS = {7, 13, 26, 29}
+UNRESOLVED_CUSTOMER_IDS = {29}
 EXEMPT_CHEQUE_NUMBERS = {"1113333", "14444", "66666"}
 
 STATUS_VERIFIED = "VERIFIED"
 STATUS_UNRESOLVED_IDENTITY = "UNRESOLVED_IDENTITY"
+STATUS_IDENTITY_CONFLICT = "EXEMPT / IDENTITY_CONFLICT"
 
 DOC_STATUS_EXEMPT = "EXEMPT"
 DOC_STATUS_VALID = "VALID"
@@ -283,10 +284,13 @@ class IdentityResolver:
             # Check if customer holds any exempt document
             cust["has_exempt_documents"] = any(ch.get("is_exempt", False) for ch in cust_cheques)
 
-            # Flag UNRESOLVED_IDENTITY vs VERIFIED
+            # Flag UNRESOLVED_IDENTITY vs EXEMPT_CONFLICT vs VERIFIED
             if cid in UNRESOLVED_CUSTOMER_IDS or cleaned_nid is None:
                 cust["identity_status"] = STATUS_UNRESOLVED_IDENTITY
                 cust["is_unresolved"] = True
+            elif cid == 1:
+                cust["identity_status"] = STATUS_IDENTITY_CONFLICT
+                cust["is_unresolved"] = False
             else:
                 cust["identity_status"] = STATUS_VERIFIED
                 cust["is_unresolved"] = False
@@ -300,7 +304,7 @@ class IdentityResolver:
                 elif cid == 1:
                     # Amirhossein Alipour
                     cust["disambiguation_role"] = "ALIPOUR_PROMISSORY_NOTE"
-                    cust["disambiguation_notes"] = "امیرحسین علیپور - دارنده سند سفته ۱۱۱۳۳۳۳ فاقد شناسه صیادی (معاف)"
+                    cust["disambiguation_notes"] = "امیرحسین علیپور - دارنده سند سفته ۱۱۱۳۳۳۳ فاقد شناسه صیادی (معاف / تعارض کدملی)"
 
             canonical_customers.append(cust)
 
@@ -348,9 +352,13 @@ class IdentityResolver:
             cust["total_cheque_amount"] = sum(ch.get("amount", 0.0) for ch in cust_cheques)
             cust["has_exempt_documents"] = any(ch.get("is_exempt", False) for ch in cust_cheques)
 
+            # Flag UNRESOLVED_IDENTITY vs EXEMPT_CONFLICT vs VERIFIED
             if cid in UNRESOLVED_CUSTOMER_IDS or cleaned_nid is None:
                 cust["identity_status"] = STATUS_UNRESOLVED_IDENTITY
                 cust["is_unresolved"] = True
+            elif cid == 1:
+                cust["identity_status"] = STATUS_IDENTITY_CONFLICT
+                cust["is_unresolved"] = False
             else:
                 cust["identity_status"] = STATUS_VERIFIED
                 cust["is_unresolved"] = False
@@ -361,7 +369,7 @@ class IdentityResolver:
                     cust["disambiguation_notes"] = "حسین حشمتی - صادرکننده چک صیادی ۲۳۸۰۰۳۰۰۷۲۵۵۶۰۸۸ عهده بانک ایران زمین"
                 elif cid == 1:
                     cust["disambiguation_role"] = "ALIPOUR_PROMISSORY_NOTE"
-                    cust["disambiguation_notes"] = "امیرحسین علیپور - دارنده سند سفته ۱۱۱۳۳۳۳ فاقد شناسه صیادی (معاف)"
+                    cust["disambiguation_notes"] = "امیرحسین علیپور - دارنده سند سفته ۱۱۱۳۳۳۳ فاقد شناسه صیادی (معاف / تعارض کدملی)"
 
             canonical_customers.append(cust)
 
@@ -769,12 +777,30 @@ class IdentityResolver:
         canonical = self.get_canonical_customers()
         return [c for c in canonical if c.get("national_id") == cleaned]
 
+    def get_valid_banking_customers(self) -> List[Dict[str, Any]]:
+        """
+        Return the 46 canonical customers who have valid Sayad banking profiles.
+        Excludes:
+        - Customer 1: Amirhossein Alipour (EXEMPT / IDENTITY_CONFLICT, promissory note)
+        - Customer 29: Davood Rangrazzadeh (UNRESOLVED_IDENTITY, missing national ID)
+        Every customer in this returned list has a verified, unique national ID.
+        """
+        canonical = self.get_canonical_customers()
+        return [c for c in canonical if c.get("id") not in (1, 29)]
+
     def get_unresolved_identities(self) -> List[Dict[str, Any]]:
         """
-        Return customers flagged with UNRESOLVED_IDENTITY (lacking national code: IDs 7, 13, 26, 29).
+        Return customers flagged with UNRESOLVED_IDENTITY (lacking national code: ID 29).
         """
         canonical = self.get_canonical_customers()
         return [c for c in canonical if c.get("identity_status") == STATUS_UNRESOLVED_IDENTITY]
+
+    def get_exempt_conflict_customers(self) -> List[Dict[str, Any]]:
+        """
+        Return customers flagged with EXEMPT / IDENTITY_CONFLICT (Customer 1: Amirhossein Alipour).
+        """
+        canonical = self.get_canonical_customers()
+        return [c for c in canonical if c.get("identity_status") == STATUS_IDENTITY_CONFLICT]
 
     def get_exempt_documents(self) -> List[Dict[str, Any]]:
         """
@@ -792,7 +818,9 @@ class IdentityResolver:
         Perform a comprehensive integrity audit on customer identities and deduplication.
         Verifies:
         - Exactly 48 canonical customers
-        - Exactly 4 unresolved identities
+        - Exactly 46 valid canonical banking profiles
+        - Exactly 1 unresolved identity (Customer 29)
+        - Exactly 1 identity conflict exempt (Customer 1)
         - Exactly 3 exempt cheques
         - 0933387075 disambiguated into 2 records
         - Leading zeros preserved on all national IDs
@@ -800,7 +828,9 @@ class IdentityResolver:
         """
         canonical = self.get_canonical_customers()
         total_customers = len(canonical)
+        valid_banking = self.get_valid_banking_customers()
         unresolved = self.get_unresolved_identities()
+        exempt_conflict = self.get_exempt_conflict_customers()
         exempt_docs = self.get_exempt_documents()
         nids_0933 = self.get_customers_by_national_id(DISAMBIGUATED_NATIONAL_ID)
 

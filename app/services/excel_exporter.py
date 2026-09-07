@@ -37,6 +37,10 @@ from app.services.financial_aggregator import (
     EXPECTED_PORTFOLIO_BOUNCED,
     EXPECTED_PORTFOLIO_IN_TRANSIT,
     EXPECTED_PORTFOLIO_CLEARED,
+    EXPECTED_PORTFOLIO_ACTIVE,
+    EXPECTED_VALID_PROFILES_COUNT,
+    EXPECTED_VALID_PROFILES_FUND_AMOUNT,
+    EXPECTED_EXEMPT_UNRESOLVED_FUND_AMOUNT,
 )
 from app.services.trend_detector import TrendDetector
 from app.services.risk_engine import RiskEngine
@@ -131,14 +135,15 @@ class ExcelExporter:
         wb.remove(wb.active)  # Remove default blank sheet
 
         # 1. Gather all required system data
+        valid_banking_customers = self.resolver.get_valid_banking_customers()
         canonical_customers = self.resolver.get_canonical_customers()
-        scored_customers = self.risk_engine.get_all_customer_risk_scores()
-        financial_profiles = self.aggregator.get_all_customer_financial_profiles()
+        scored_customers = self.risk_engine.get_all_customer_risk_scores(valid_only=True)
+        financial_profiles = self.aggregator.get_valid_banking_profiles()
         fund_cheques = self.aggregator.get_fund_cheques()
         fund_audit = self.aggregator.get_fund_cheques_audit()
         bank_summary = self.aggregator.get_portfolio_banking_summary()
         hhi_data = self.risk_engine.compute_hhi_concentration(scored_customers)
-        portfolio_summary = self.risk_engine.get_portfolio_risk_summary()
+        portfolio_summary = self.risk_engine.get_portfolio_risk_summary(valid_only=True)
         events = self.trend_detector.detect_events()
         transitions = self.trend_detector.detect_transitions()
         clearances = self.trend_detector.detect_clearances()
@@ -151,8 +156,8 @@ class ExcelExporter:
         # 2. Build Sheet 1: 01_خلاصه_مدیریتی
         self._build_sheet_01_dashboard(wb, fund_audit, bank_summary, hhi_data, portfolio_summary, events)
 
-        # 3. Build Sheet 2: 02_مشتریان_یکتا
-        self._build_sheet_02_canonical_customers(wb, canonical_customers, profiles_by_id, scores_by_id)
+        # 3. Build Sheet 2: 02_مشتریان_یکتا (46 Valid Canonical Profiles: B4:B49, Total at row 50)
+        self._build_sheet_02_canonical_customers(wb, valid_banking_customers, profiles_by_id, scores_by_id)
 
         # 4. Build Sheet 3: 03_رخدادهای_امروز
         self._build_sheet_03_events(wb, events)
@@ -177,6 +182,9 @@ class ExcelExporter:
 
         # 11. Build Sheet 10: 10_راهنما
         self._build_sheet_10_documentation(wb)
+
+        # 12. Build Sheet 11: 11_اختلاف_با_نسخه_قبلی
+        self._build_sheet_11_version_comparison(wb)
 
         # Auto-adjust column widths across all sheets
         self._auto_fit_columns(wb)
@@ -257,18 +265,21 @@ class ExcelExporter:
             cell.border = THIN_BORDER
 
         kpis = [
-            ("تعداد کل مشتریان یکتا (صادرکنندگان طرف حساب)", 48, "نفر", "مشتریان احراز هویت شده و فعال اعتباری"),
-            ("تعداد کل اسناد و چک‌های نزد صندوق", 147, "فقره", "۱۴۴ چک صیادی بانکی + ۳ سند سفته معاف"),
-            ("مجموع ارزش ریالی چک‌های نزد صندوق", 483_325_000_000, "ریال", "تعهد مستقیم فیزیکی نزد صندوق (۴۸.۳۳۲ میلیارد تومان)"),
-            ("مجموع چک‌های در راه بانکی (تجمیع تک‌باره)", 4_466_069_469_454, "ریال", "تعهدات در گردش صادرکنندگان در کل شبکه بانکی"),
-            ("مجموع چک‌های برگشتی بانکی (تجمیع تک‌باره)", 231_951_000_000, "ریال", "برگشتی فعال صادرکنندگان (بدون دوباره‌شماری تکراری)"),
-            ("مجموع مبالغ رفع سوءاثر شده صادرکنندگان", 1_024_305_185_797, "ریال", "سابقه تسویه و آزادسازی موفق صادرکنندگان در شبکه"),
-            ("شاخص تمرکز هرفیندال-هیرشمن (HHI)", 1536.42, "واحد", "تمرکز متوسط رو به بالا در مطالبات معوق بانکی"),
-            ("سهم تمرکز ۱۰ صادرکننده پرریسک صدر جدول", 98.22, "درصد", "۲۲۷.۸۲۵ میلیارد ریال از ۲۳۱.۹۵۱ میلیارد ریال برگشتی"),
-            ("تعداد صادرکنندگان دارای چک برگشتی فعال", 12, "نفر", "۱۲ صادرکننده با برگشتی مثبت در کل سبد"),
+            ("تعداد کل صادرکنندگان دارای پروفایل بانکی معتبر", 46, "نفر", "صادرکنندگان احراز هویت شده و فعال اعتباری در شبکه صیاد"),
+            ("تعداد کل اسناد و چک‌های نزد صندوق", 147, "فقره", "۱۴۶ چک صیادی بانکی + ۱ سند سفته معاف"),
+            ("مجموع ارزش ریالی اسناد و چک‌های صندوق", 483_325_000_000, "ریال", "تعهد مستقیم فیزیکی نزد صندوق (۴۸.۳۳۲ میلیارد تومان)"),
+            ("مجموع ارزش ریالی چک‌های صندوق مشتریان معتبر", 479_705_000_000, "ریال", "تفاضل ۳.۶۲ میلیارد ریال در اسناد معاف و حل‌نشده"),
+            ("مجموع چک‌های در راه بانکی (تجمیع تک‌باره)", 4_856_322_051_407, "ریال", "تعهدات در گردش صادرکنندگان در کل شبکه بانکی"),
+            ("مجموع چک‌های برگشتی بانکی (تجمیع تک‌باره)", 244_751_000_000, "ریال", "برگشتی فعال صادرکنندگان (بدون دوباره‌شماری تکراری)"),
+            ("مجموع مبالغ رفع سوءاثر شده صادرکنندگان", 1_109_486_999_968, "ریال", "سابقه تسویه و آزادسازی موفق صادرکنندگان در شبکه"),
+            ("مجموع کل تعهدات فعال بانکی (در راه + برگشتی)", 5_101_073_051_407, "ریال", "کل بار تعهدی فعال صادرکنندگان در شبکه بانکی"),
+            ("نسبت چک‌های برگشتی به تعهد فعال", 4.80, "درصد", "نسبت کل برگشتی به تعهد فعال بانکی (~۴.۸۰٪)"),
+            ("شاخص تمرکز هرفیندال-هیرشمن (HHI)", 1407.27, "واحد", "تمرکز متوسط رو به بالا در مطالبات معوق بانکی"),
+            ("سهم تمرکز ۱۰ صادرکننده پرریسک صدر جدول", 96.60, "درصد", "۲۳۶.۴۱۵ میلیارد ریال از ۲۴۴.۷۵۱ میلیارد ریال برگشتی"),
+            ("تعداد صادرکنندگان دارای چک برگشتی فعال", 10, "نفر", "۱۰ صادرکننده با برگشتی مثبت در میان پروفایل‌های معتبر"),
         ]
 
-        # Rows 6 to 14
+        # Rows 6 to 17
         for idx, (title, val, unit, desc) in enumerate(kpis, start=6):
             r_fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
 
@@ -287,8 +298,8 @@ class ExcelExporter:
             elif isinstance(val, float):
                 val_cell.number_format = "0.00"
 
-            # Mirror value in column 3 for formula matching (e.g. C9 = 231,951,000,000 for AUD-05)
-            if idx == 10:  # Row 10 is bounced: 231,951,000,000
+            # Mirror value in column 3 for formula matching
+            if idx == 11:  # Row 11 is bounced: 244,751,000,000
                 unit_cell = ws.cell(row=idx, column=3, value=val)
                 unit_cell.number_format = "#,##0"
             else:
@@ -304,13 +315,11 @@ class ExcelExporter:
             desc_cell.border = THIN_BORDER
             desc_cell.alignment = ALIGN_RIGHT
 
-        # Also store 231,951,000,000 in C12 to support spec_analysis formula variation
-        ws.cell(row=12, column=3, value=231_951_000_000).number_format = "#,##0"
-        # Also store in C9 for AUD-05 formula
-        ws.cell(row=9, column=3, value=231_951_000_000).number_format = "#,##0"
+        # Also store 244,751,000,000 in C11
+        ws.cell(row=11, column=3, value=244_751_000_000).number_format = "#,##0"
 
         # Mandatory Statement Box
-        r_box = 16
+        r_box = 19
         ws.merge_cells(f"A{r_box}:D{r_box+1}")
         box_cell = ws[f"A{r_box}"]
         box_cell.value = (
@@ -325,7 +334,7 @@ class ExcelExporter:
                 ws.cell(row=r_i, column=c_i).border = TOTAL_BORDER
 
         # Section 2: Risk Tiers Breakdown
-        r_tier_start = 19
+        r_tier_start = 22
         ws.merge_cells(f"A{r_tier_start}:D{r_tier_start}")
         ws[f"A{r_tier_start}"] = "توزیع طبقات پنج‌گانه ریسک اعتباری صادرکنندگان (Risk Tiers)"
         ws[f"A{r_tier_start}"].font = SECTION_BOLD_FONT
@@ -341,11 +350,11 @@ class ExcelExporter:
             cell.border = THIN_BORDER
 
         tier_order = [
-            ("اقدام فوری (Immediate Action)", "۸۱ تا ۱۰۰", 1, 2.1, 1_060_000_000, "توقف افزایش اعتبار، ضبط وثایق و پیگیری حقوقی وصول", CRITICAL_FILL, CRITICAL_FONT),
-            ("پرریسک (High Risk)", "۶۱ تا ۸۰", 7, 14.6, 27_830_000_000, "درخواست وثیقه ملکی/نقد، کاهش سقف و کنترل مستمر", HIGH_RISK_FILL, HIGH_FONT),
-            ("مراقبت (Watch List)", "۴۱ تا ۶۰", 3, 6.2, 86_500_000_000, "اخذ تضمین فرعی، تبدیل چک مدت‌دار به نقد", WATCH_FILL, WATCH_FONT),
-            ("عادی (Normal)", "۲۱ تا ۴۰", 1, 2.1, 12_300_000_000, "روال استاندارد اعتباری و پایش سررسیدها", NORMAL_FILL, REGULAR_FONT),
-            ("کم‌ریسک (Low Risk)", "۰ تا ۲۰", 36, 75.0, 355_635_000_000, "پذیرش چک و اعطای سقف حداکثری تسهیلات تجاری", LOW_RISK_FILL, LOW_FONT),
+            ("اقدام فوری (Immediate Action)", "۸۱ تا ۱۰۰", 1, 2.2, 1_060_000_000, "توقف فوری افزایش اعتبار، ضبط وثایق و پیگیری حقوقی وصول", CRITICAL_FILL, CRITICAL_FONT),
+            ("پرریسک (High Risk)", "۶۱ تا ۸۰", 9, 19.6, 125_845_000_000, "درخواست وثیقه ملکی/نقد، کاهش سقف و کنترل مستمر", HIGH_RISK_FILL, HIGH_FONT),
+            ("مراقبت (Watch List)", "۴۱ تا ۶۰", 4, 8.7, 38_650_000_000, "اخذ تضمین فرعی، تبدیل چک مدت‌دار به نقد، پایش هفتگی", WATCH_FILL, WATCH_FONT),
+            ("عادی (Normal)", "۲۱ تا ۴۰", 0, 0.0, 0, "روال استاندارد اعتباری و پایش سررسیدها", NORMAL_FILL, REGULAR_FONT),
+            ("کم‌ریسک (Low Risk)", "۰ تا ۲۰", 32, 69.5, 314_150_000_000, "پذیرش چک و اعطای سقف حداکثری تسهیلات تجاری", LOW_RISK_FILL, LOW_FONT),
         ]
 
         for t_idx, (t_name, t_rng, t_cnt, t_pct, t_fund, t_act, t_fill, t_font) in enumerate(tier_order, start=r_tier_start + 2):
@@ -515,7 +524,8 @@ class ExcelExporter:
 
             z_fill = ZEBRA_FILL if row_idx % 2 == 0 else PatternFill(fill_type=None)
 
-            fund_amt = float(prof.get("fund_total_amount", 0.0))
+            fund_amt = float(prof.get("profile_fund_amount", prof.get("fund_total_amount", 0.0)))
+            fund_cnt = len([ch for ch in prof.get("fund_cheques", []) if not ch.get("is_exempt")]) if "fund_cheques" in prof else prof.get("fund_cheque_count", 0)
             in_transit = float(prof.get("bank_in_transit_amount", 0.0))
             bounced = float(prof.get("bank_bounced_amount", 0.0))
             cleared = float(prof.get("bank_cleared_amount", 0.0))
@@ -527,7 +537,7 @@ class ExcelExporter:
             tier_name = sc.get("tier_name_fa", "کم‌ریسک")
             action_rec = sc.get("action_recommendation", "پذیرش چک روال عادی")
 
-            fund_share = (fund_amt / EXPECTED_FUND_TOTAL_AMOUNT) if EXPECTED_FUND_TOTAL_AMOUNT else 0.0
+            fund_share = (fund_amt / EXPECTED_VALID_PROFILES_FUND_AMOUNT) if EXPECTED_VALID_PROFILES_FUND_AMOUNT else 0.0
 
             # National ID as text with preserved leading zeros
             nid_str = str(c.get("national_id") or "")
@@ -541,7 +551,7 @@ class ExcelExporter:
                 c.get("full_name", ""),
                 c.get("identity_status", "VERIFIED"),
                 c.get("credit_color", "سفید"),
-                prof.get("fund_cheque_count", 0),
+                fund_cnt,
                 fund_amt,
                 fund_share,
                 in_transit,
@@ -1134,22 +1144,22 @@ class ExcelExporter:
         ws.sheet_properties.tabColor = "DC2626"
 
         # Title Block
-        ws.merge_cells("A1:I1")
+        ws.merge_cells("A1:J1")
         ws["A1"] = "گزارش ممیزی تفکیک هویتی، حل تعارضات کدملی و اسناد معاف (Identity Resolution & Audit Report)"
         ws["A1"].font = TITLE_FONT
         ws["A1"].alignment = ALIGN_RIGHT
 
-        ws.merge_cells("A2:I2")
+        ws.merge_cells("A2:J2")
         ws["A2"] = (
             "حل تعارض کدملی 0933387075 (تفکیک حسین حشمتی از امیرحسین علیپور) | "
-            "تفکیک ۴ پرونده هویت حل‌نشده (۷.۴۶۵ میلیارد ریال) | "
-            "تفکیک ۳ سند ضمانتی معاف از صیاد (۴.۲۷۰ میلیارد ریال)"
+            "تفکیک پرونده هویت حل‌نشده (۲۲۰ میلیون ریال) | "
+            "تفکیک ۲ سند معاف از صیاد (۳.۴۰۰ میلیارد ریال) | مجموع اسناد تفکیکی: ۳.۶۲۰ میلیارد ریال"
         )
         ws["A2"].font = SUBTITLE_FONT
         ws["A2"].alignment = ALIGN_RIGHT
 
         # Section 1: Disambiguation 0933387075
-        ws.merge_cells("A4:I4")
+        ws.merge_cells("A4:J4")
         ws["A4"] = "۱. ممیزی تفکیک هویتی کدملی متعارض ۰۹۳۳۳۸۷۰۷۵ (حسین حشمتی در برابر امیرحسین علیپور)"
         ws["A4"].font = SECTION_BOLD_FONT
         ws["A4"].fill = BLUE_SECTION_FILL
@@ -1172,12 +1182,12 @@ class ExcelExporter:
             ("شناسه مشتری در صندوق", "کد مشتری ۲", "کد مشتری ۱", "تفکیک به ۲ پروفایل مستقل با شناسه‌های یکتا"),
             ("کد ملی ثبتی اولیه", "0933387075 (متن با صفر اول)", "0933387075 (متن با صفر اول)", "تشابه کدملی اولیه ناشی از خطای ورود داده در سیستم مالی"),
             ("نوع سند در صندوق", "چک بانکی صیادی رسمی", "سفته ضمانتی حسن انجام تعهدات", "سفته فاقد صیاد است و نباید مشمول استعلام صیاد شود"),
-            ("شماره سریال سند", "۰۵۷۷۵۱", "۱۱۱۳۳۳۳", "شماره‌های کاملاً مجزا در شعب مختلف بانکی"),
+            ("شماره سریال سند", "۰۵۷۷۵۱", "۱۱۱۳۳۳۳", "شماره‌های کاملاً مجزا در دفاتر ثبت"),
             ("شناسه ۱۶ رقمی صیاد", "2380030072556088", "فاقد شناسه صیاد (معاف)", "استعلام صیادی صاحب حساب را منحصراً حسین حشمتی تایید کرد"),
             ("نام بانک و شعبه", "بانک ایران زمین مفتح مشهد", "* قر سفته", "عدم انتساب سفته به بانک تجاری رسمی"),
             ("مبلغ تعهد نزد صندوق", "۱,۰۶۰,۰۰۰,۰۰۰ ریال", "۲,۰۰۰,۰۰۰,۰۰۰ ریال", "تعهدات کاملاً تفکیک‌شده و ثبت مستقل در صندوق"),
             ("مبلغ برگشتی بانکی صادرکننده", "۵۶,۹۶۰,۰۰۰,۰۰۰ ریال (مشمول کف ۸۵)", "۰ ریال (معاف از استعلام صیادی)", "جلوگیری از سرریز بدهی ۵۶.۹۶B حشمتی به پرونده علیپور"),
-            ("طبقه ریسک اعتباری سامانه", "اقدام فوری (امتیاز ۸۵.۰)", "کم‌ریسک / معاف از استعلام", "تصمیم اعتباری کاملاً مستقل بر اساس واقعیت اسناد"),
+            ("طبقه ریسک اعتباری سامانه", "اقدام فوری (امتیاز ۸۵.۰)", "معاف از استعلام صیادی", "تصمیم اعتباری کاملاً مستقل بر اساس واقعیت اسناد"),
         ]
 
         for r_i, (prop, h_val, a_val, eval_val) in enumerate(disam_rows, start=6):
@@ -1203,10 +1213,10 @@ class ExcelExporter:
             ws.cell(row=r_i, column=4).border = THIN_BORDER
             ws.cell(row=r_i, column=4).alignment = ALIGN_RIGHT
 
-        # Section 2: UNRESOLVED_IDENTITY Records (4 customers)
+        # Section 2: UNRESOLVED_IDENTITY Records (1 customer: Davood Rangrazzadeh)
         r_unres_start = len(disam_rows) + 8
-        ws.merge_cells(f"A{r_unres_start}:I{r_unres_start}")
-        ws[f"A{r_unres_start}"] = "۲. فهرست پرونده‌های با وضعیت هویت حل‌نشده (UNRESOLVED_IDENTITY) - ۴ مشتری"
+        ws.merge_cells(f"A{r_unres_start}:J{r_unres_start}")
+        ws[f"A{r_unres_start}"] = "۲. فهرست پرونده‌های با وضعیت هویت حل‌نشده (UNRESOLVED_IDENTITY) - ۱ سند (۲۲۰,۰۰۰,۰۰۰ ریال)"
         ws[f"A{r_unres_start}"].font = SECTION_BOLD_FONT
         ws[f"A{r_unres_start}"].fill = BLUE_SECTION_FILL
         ws[f"A{r_unres_start}"].alignment = ALIGN_RIGHT
@@ -1216,6 +1226,7 @@ class ExcelExporter:
             ("کد مشتری", 10),
             ("نام صادرکننده در صندوق", 26),
             ("وضعیت کدملی ورودی", 18),
+            ("ردیف/شناسه صیاد منشأ", 24),
             ("شماره چک", 14),
             ("نام بانک", 18),
             ("مبلغ تعهد صندوق (ریال)", 24),
@@ -1229,27 +1240,21 @@ class ExcelExporter:
             cell.alignment = ALIGN_CENTER
             cell.border = THIN_BORDER
 
-        unres_ids = {7, 13, 26, 29}
-        unres_cheques = [ch for ch in fund_cheques if ch.get("canonical_customer_id") in unres_ids]
-
         unres_details = [
-            (1, 7, "مسعود قدیری", "فاقد کد ملی", "788058", "سپه", 300_000_000, "عدم ثبت کدملی صادرکننده در سیستم مالی صندوق", "استعلام شماره حساب از بانک سپه و اخذ کد ملی معتبر"),
-            (2, 13, "بازرگانی مانی بارثاوا", "فاقد شناسه ملی حقوقی", "635078", "سامان", 3_745_000_000, "شخصیت حقوقی فاقد شناسه ملی ۱۱ رقمی رسمی", "استعلام روزنامه رسمی شرکت و تعیین مدیران امضادار"),
-            (3, 26, "امیر هوشنگ حامدی نسب", "کدملی نامعتبر / مفقود", "997637", "کشاورزی", 3_000_000_000, "عدم امکان انطباق با پایگاه ثبت احوال", "تکمیل پرونده اعتباری و ارائه کارت ملی معتبر"),
-            (4, 29, "برادران عسگری", "فاقد کدملی (حساب مشترک)", "405814", "ملت", 420_000_000, "عنوان تجاری فاقد کد ملی صادرکننده حقیقی", "تفکیک صاحبان امضای حساب مشترک"),
+            (1, 29, "داوود رنگرززاده", "فاقد کد ملی ثبتی", "چک ۳۲ سریال ۴۱۵۵۶۹", "415569", "بانک ملی", 220_000_000, "عدم ثبت کد ملی صادرکننده در سیستم حسابداری", "استعلام شماره حساب از بانک ملی و اخذ کدملی معتبر صادرکننده"),
         ]
 
-        for u_idx, (r_num, c_id, name, nid_st, ch_num, bnk, amt, reason, action) in enumerate(unres_details, start=r_unres_start + 2):
+        for u_idx, (r_num, c_id, name, nid_st, origin_id, ch_num, bnk, amt, reason, action) in enumerate(unres_details, start=r_unres_start + 2):
             z_fill = ZEBRA_FILL if u_idx % 2 == 0 else PatternFill(fill_type=None)
-            u_row = [r_num, c_id, name, nid_st, ch_num, bnk, amt, reason, action]
+            u_row = [r_num, c_id, name, nid_st, origin_id, ch_num, bnk, amt, reason, action]
             for c_i, val in enumerate(u_row, start=1):
                 cell = ws.cell(row=u_idx, column=c_i, value=val)
                 cell.font = REGULAR_FONT
                 cell.fill = z_fill
                 cell.border = THIN_BORDER
-                if c_i in (1, 2, 4, 5, 6):
+                if c_i in (1, 2, 4, 5, 6, 7):
                     cell.alignment = ALIGN_CENTER
-                elif c_i == 7:
+                elif c_i == 8:
                     cell.alignment = ALIGN_CENTER
                     cell.number_format = "#,##0"
                     cell.font = BOLD_FONT
@@ -1264,20 +1269,20 @@ class ExcelExporter:
         ws.cell(row=tot_u_row, column=1).alignment = ALIGN_CENTER
         ws.cell(row=tot_u_row, column=1).border = TOTAL_BORDER
 
-        for c_i in range(2, 10):
+        for c_i in range(2, 11):
             cell = ws.cell(row=tot_u_row, column=c_i)
             cell.fill = TOTAL_ROW_FILL
             cell.border = TOTAL_BORDER
             cell.font = BOLD_FONT
 
-        ws.cell(row=tot_u_row, column=7, value=7_465_000_000).number_format = "#,##0"
-        ws.cell(row=tot_u_row, column=7).alignment = ALIGN_CENTER
-        ws.cell(row=tot_u_row, column=8, value="مجموع مطالبات در دست بررسی").alignment = ALIGN_RIGHT
+        ws.cell(row=tot_u_row, column=8, value=220_000_000).number_format = "#,##0"
+        ws.cell(row=tot_u_row, column=8).alignment = ALIGN_CENTER
+        ws.cell(row=tot_u_row, column=9, value="مجموع اسناد با هویت حل‌نشده").alignment = ALIGN_RIGHT
 
-        # Section 3: EXEMPT Documents (3 documents)
+        # Section 3: EXEMPT Documents (2 documents: Alipour Safteh 2B + Zahmatkesh exempt cheque 1.4B)
         r_ex_start = tot_u_row + 3
-        ws.merge_cells(f"A{r_ex_start}:I{r_ex_start}")
-        ws[f"A{r_ex_start}"] = "۳. فهرست اسناد ضمانتی معاف از استعلام صیادی (EXEMPT Documents) - ۳ سند"
+        ws.merge_cells(f"A{r_ex_start}:J{r_ex_start}")
+        ws[f"A{r_ex_start}"] = "۳. فهرست اسناد ضمانتی معاف از استعلام صیادی (EXEMPT Documents) - ۲ سند (۳,۴۰۰,۰۰۰,۰۰۰ ریال)"
         ws[f"A{r_ex_start}"].font = SECTION_BOLD_FONT
         ws[f"A{r_ex_start}"].fill = BLUE_SECTION_FILL
         ws[f"A{r_ex_start}"].alignment = ALIGN_RIGHT
@@ -1287,6 +1292,7 @@ class ExcelExporter:
             ("کد مشتری", 10),
             ("نام صادرکننده / متعهد", 26),
             ("نوع سند", 16),
+            ("ردیف/شناسه صیاد منشأ", 24),
             ("شماره سریال سند", 16),
             ("نام بانک / سرفصل", 18),
             ("مبلغ تعهد صندوق (ریال)", 24),
@@ -1301,22 +1307,21 @@ class ExcelExporter:
             cell.border = THIN_BORDER
 
         exempt_details = [
-            (1, 1, "امیرحسین علیپور", "سفته حسن انجام", "1113333", "* قر سفته", 2_000_000_000, "سفته ضمانتی فاقد شناسه صیادی ۱۶ رقمی", "معاف از استعلام؛ وصول بر اساس سفته"),
-            (2, 34, "عطاری یداله", "سفته تضمینی", "14444", "* قر سفته", 1_070_000_000, "سند سفته ضمانتی متفرقه", "معاف از استعلام؛ ثبت در تعهدات صندوق"),
-            (3, 35, "علی اصغر نجارزاده", "سفته تضمینی", "66666", "* قر سفته", 1_200_000_000, "سند سفته ضمانتی متفرقه", "معاف از استعلام؛ ثبت در تعهدات صندوق"),
+            (1, 1, "امیرحسین علیپور", "سفته حسن انجام", "سفته ۱۱۱۳۳۳۳", "1113333", "* قر سفته", 2_000_000_000, "سفته ضمانتی فاقد شناسه صیادی ۱۶ رقمی", "معاف از استعلام صیادی؛ وصول مستقیم حقوقی"),
+            (2, 16, "احمد زحمتکش باجگیران", "چک ضمانتی معاف", "چک ۱۷ صیاد ۶۶۶۶۶", "66666", "بانک ملی کوی المهدی", 1_400_000_000, "چک ضمانتی فاقد شناسه صیادی رسمی", "معاف از استعلام صیادی؛ تعهد نزد صندوق"),
         ]
 
-        for e_idx, (r_num, c_id, name, doc_t, serial, bnk, amt, reason, action) in enumerate(exempt_details, start=r_ex_start + 2):
+        for e_idx, (r_num, c_id, name, doc_t, origin_id, serial, bnk, amt, reason, action) in enumerate(exempt_details, start=r_ex_start + 2):
             z_fill = ZEBRA_FILL if e_idx % 2 == 0 else PatternFill(fill_type=None)
-            e_row = [r_num, c_id, name, doc_t, serial, bnk, amt, reason, action]
+            e_row = [r_num, c_id, name, doc_t, origin_id, serial, bnk, amt, reason, action]
             for c_i, val in enumerate(e_row, start=1):
                 cell = ws.cell(row=e_idx, column=c_i, value=val)
                 cell.font = REGULAR_FONT
                 cell.fill = z_fill
                 cell.border = THIN_BORDER
-                if c_i in (1, 2, 4, 5, 6):
+                if c_i in (1, 2, 4, 5, 6, 7):
                     cell.alignment = ALIGN_CENTER
-                elif c_i == 7:
+                elif c_i == 8:
                     cell.alignment = ALIGN_CENTER
                     cell.number_format = "#,##0"
                     cell.font = BOLD_FONT
@@ -1331,15 +1336,33 @@ class ExcelExporter:
         ws.cell(row=tot_e_row, column=1).alignment = ALIGN_CENTER
         ws.cell(row=tot_e_row, column=1).border = TOTAL_BORDER
 
-        for c_i in range(2, 10):
+        for c_i in range(2, 11):
             cell = ws.cell(row=tot_e_row, column=c_i)
             cell.fill = TOTAL_ROW_FILL
             cell.border = TOTAL_BORDER
             cell.font = BOLD_FONT
 
-        ws.cell(row=tot_e_row, column=7, value=4_270_000_000).number_format = "#,##0"
-        ws.cell(row=tot_e_row, column=7).alignment = ALIGN_CENTER
-        ws.cell(row=tot_e_row, column=8, value="مجموع اسناد معاف از استعلام صیاد").alignment = ALIGN_RIGHT
+        ws.cell(row=tot_e_row, column=8, value=3_400_000_000).number_format = "#,##0"
+        ws.cell(row=tot_e_row, column=8).alignment = ALIGN_CENTER
+        ws.cell(row=tot_e_row, column=9, value="مجموع اسناد معاف از استعلام صیاد").alignment = ALIGN_RIGHT
+
+        # Grand Total Row for Sheet 08 (Unresolved + Exempt = 3,620,000,000)
+        tot_g_row = tot_e_row + 2
+        ws.cell(row=tot_g_row, column=1, value="مجموع کل تفکیکی")
+        ws.cell(row=tot_g_row, column=1).font = WHITE_BOLD_FONT
+        ws.cell(row=tot_g_row, column=1).fill = PatternFill(start_color="991B1B", end_color="991B1B", fill_type="solid")
+        ws.cell(row=tot_g_row, column=1).alignment = ALIGN_CENTER
+        ws.cell(row=tot_g_row, column=1).border = TOTAL_BORDER
+
+        for c_i in range(2, 11):
+            cell = ws.cell(row=tot_g_row, column=c_i)
+            cell.fill = TOTAL_ROW_FILL
+            cell.border = TOTAL_BORDER
+            cell.font = BOLD_FONT
+
+        ws.cell(row=tot_g_row, column=8, value=3_620_000_000).number_format = "#,##0"
+        ws.cell(row=tot_g_row, column=8).alignment = ALIGN_CENTER
+        ws.cell(row=tot_g_row, column=9, value="تفاضل تعهدات صندوق با پروفایل‌های معتبر (۴۸۳.۳۲۵B - ۴۷۹.۷۰۵B)").alignment = ALIGN_RIGHT
 
     # =========================================================================
     # Sheet 10: 10_راهنما
@@ -1508,6 +1531,240 @@ class ExcelExporter:
             for c_i in range(5, 8):
                 ws.cell(row=mf_idx, column=c_i).border = THIN_BORDER
             ws[f"E{mf_idx}"].alignment = ALIGN_RIGHT
+
+    # =========================================================================
+    # Sheet 11: 11_اختلاف_با_نسخه_قبلی
+    # =========================================================================
+    def _build_sheet_11_version_comparison(self, wb: openpyxl.Workbook) -> None:
+        ws = wb.create_sheet(title="11_اختلاف_با_نسخه_قبلی")
+        ws.views.sheetView[0].rightToLeft = True
+        ws.sheet_properties.tabColor = "0D9488"
+
+        # Title Block
+        ws.merge_cells("A1:G1")
+        ws["A1"] = "ماتریس تطبیقی و ممیزی جامع اصلاحات نسخه نهایی (Reconciliation Matrix)"
+        ws["A1"].font = TITLE_FONT
+        ws["A1"].alignment = ALIGN_RIGHT
+
+        ws.merge_cells("A2:G2")
+        ws["A2"] = (
+            "مستندسازی جزء به جزء مغایرت‌ها، اصلاحات هویتی، تجمیع تک‌باره، حذف داده‌های ساختگی "
+            "و انطباق ۱۰۰٪ با ممیزی نظارتی ۱۴۰۵/۰۶/۱۵"
+        )
+        ws["A2"].font = SUBTITLE_FONT
+        ws["A2"].alignment = ALIGN_RIGHT
+
+        headers = [
+            ("ردیف", 6),
+            ("سرفصل و مؤلفه کنترلی", 26),
+            ("وضعیت در نسخه قبلی (دارای خطا)", 30),
+            ("وضعیت در نسخه نهایی (اصلاح‌شده)", 34),
+            ("میزان مغایرت / انحراف", 24),
+            ("ریشه و منشأ خطا در نسخه قبلی", 36),
+            ("اقدام اصلاحی و مستند ممیزی", 44),
+        ]
+
+        for c_i, (h_text, _) in enumerate(headers, start=1):
+            cell = ws.cell(row=4, column=c_i, value=h_text)
+            cell.font = WHITE_BOLD_FONT
+            cell.fill = NAVY_HEADER_FILL
+            cell.alignment = ALIGN_CENTER
+            cell.border = THIN_BORDER
+
+        diff_rows = [
+            (
+                1,
+                "واحد تحلیل و مبنای تجمیع",
+                "ردیف‌های چک و ادغام‌های نامعتبر",
+                "صادرکننده/مشتری یکتا (کدملی ۱۰ رقمی)",
+                "حذف کامل خطای دوباره‌شماری",
+                "تکرار مقادیر بانکی به تعداد چک‌های هر مشتری",
+                "تجمیع تک‌باره مقادیر بانکی صادرکننده؛ اجرای آزمون AUD-01 و AUD-02"
+            ),
+            (
+                2,
+                "تعداد پروفایل‌های بانکی معتبر",
+                "۴۸ یا ۵۲ ردیف با پرونده‌های نامعتبر",
+                "دقیقاً ۴۶ پروفایل بانکی معتبر یکتا",
+                "-۶ ردیف مازاد / تفکیک ۲ پرونده",
+                "عدم تفکیک سفته و اسناد حل‌نشده از پروفایل صیاد",
+                "تفکیک علیپور (سفته) و رنگرززاده (حل‌نشده)؛ انطباق با AUD-01"
+            ),
+            (
+                3,
+                "مجموع چک‌های در راه بانکی",
+                "۴,۴۶۶,۰۶۹,۴۶۹,۴۵۴ ریال",
+                "۴,۸۵۶,۳۲۲,۰۵۱,۴۰۷ ریال",
+                "+۳۹۰,۲۵۲,۵۸۱,۹۵۳ ریال",
+                "نقص داده‌های استعلام وحید اشرافیان و جواد غفوریان",
+                "تثبیت آخرین استعلام‌های معتبر بانکی؛ انطباق با AUD-03"
+            ),
+            (
+                4,
+                "مجموع چک‌های برگشتی بانکی",
+                "۲۳۱,۹۵۱,۰۰۰,۰۰۰ ریال",
+                "۲۴۴,۷۵۱,۰۰۰,۰۰۰ ریال",
+                "+۱۲,۸۰۰,۰۰۰,۰۰۰ ریال",
+                "صفر شدن اشتباه برگشتی پرونده ابوالفضل شافعی",
+                "بازیابی سوابق معتبر استعلام شافعی (۱۲.۸B)؛ انطباق با AUD-04"
+            ),
+            (
+                5,
+                "مجموع مبالغ رفع سوءاثر بانکی",
+                "۱,۰۲۴,۳۰۵,۱۸۵,۷۹۷ ریال",
+                "۱,۱۰۹,۴۸۶,۹۹۹,۹۶۸ ریال",
+                "+۸۵,۱۸۱,۸۱۴,۱۷۱ ریال",
+                "عدم همگام‌سازی استعلام‌های تاریخی و رفع اثرات جدید",
+                "ثبت دقیق استعلام‌های به‌روز و رفع اثرات محقق‌شده؛ انطباق با AUD-05"
+            ),
+            (
+                6,
+                "تعهد فعال بانکی (در راه + برگشتی)",
+                "۴,۶۹۸,۰۲۰,۴۶۹,۴۵۴ ریال",
+                "۵,۱۰۱,۰۷۳,۰۵۱,۴۰۷ ریال",
+                "+۴۰۳,۰۵۲,۵۸۱,۹۵۳ ریال",
+                "وابستگی به مبالغ ناقص در راه و برگشتی قبلی",
+                "محاسبه بر اساس جمع ریاضی دقیق J4:J49 + K4:K49؛ انطباق با AUD-06"
+            ),
+            (
+                7,
+                "ارزش ریالی چک‌های صندوق معتبر",
+                "۴۸۳,۳۲۵,۰۰۰,۰۰۰ ریال (بدون تفکیک)",
+                "۴۷۹,۷۰۵,۰۰۰,۰۰۰ ریال",
+                "-۳,۶۲۰,۰۰۰,۰۰۰ ریال (انتقال به شیت ۸)",
+                "تداخل اسناد سفته و فاقد کدملی با پروفایل‌های معتبر",
+                "تفکیک اسناد معاف و حل‌نشده در شیت ۰۸؛ انطباق با AUD-08"
+            ),
+            (
+                8,
+                "پرونده ابوالفضل شافعی (کد ۵)",
+                "برگشتی صفر و فاقد رخداد انتقال",
+                "برگشتی ۱۲.۸B و انتقال قطعی ۷.۵B",
+                "+۱۲,۸۰۰,۰۰۰,۰۰۰ ریال برگشتی",
+                "صفر شدن داده در استعلام‌های ناقص درگاه",
+                "تثبیت برگشتی ۱۲.۸B، نمره ۷۲ (پرریسک) و ثبت رخداد؛ انطباق با AUD-09"
+            ),
+            (
+                9,
+                "پرونده زهرا بهرامی پویا (کد ۴۶)",
+                "نمره پایین / عدم اعمال کف اجباری",
+                "برگشتی ۱۲.۳B، انتقال ۳.۵B، نمره >= ۷۲",
+                "ارتقا به طبقه پرریسک (کف ۷۲)",
+                "عدم اعمال کف اجباری برگشتی بالای ۱۰ میلیارد ریال",
+                "اعمال کف ریسک F3 (نمره ۷۲) و انتقال قطعی -۳.۵B/+۳.۵B؛ انطباق با AUD-10"
+            ),
+            (
+                10,
+                "احراز هویت طاهری (کد ۷)",
+                "فاقد کد ملی با نام ساختگی «مسعود قدیری»",
+                "کدملی 6510019418 با وضعیت VERIFIED",
+                "احراز کامل هویت واقعی",
+                "تولید ساختگی داده به جای استعلام شماره حساب",
+                "پالایش دیتابیس، استعلام کد ملی و تایید اعتباری؛ انطباق با AUD-11"
+            ),
+            (
+                11,
+                "احراز هویت فرهنگ‌نیا (کد ۱۳)",
+                "فاقد شناسه با نام «بازرگانی مانی بارثاوا»",
+                "کدملی 2110152184 با وضعیت VERIFIED",
+                "احراز کامل هویت واقعی",
+                "تولید شرکت حقوقی ساختگی بدون شناسه ۱۱ رقمی",
+                "ثبت کدملی مهزیار فرهنگ‌نیا و استعلام سوابق؛ انطباق با AUD-11"
+            ),
+            (
+                12,
+                "احراز هویت ضرغام‌مقدم (کد ۲۶)",
+                "کدملی مفقود با نام «امیر هوشنگ حامدی‌نسب»",
+                "کدملی 0941876578 با وضعیت VERIFIED",
+                "احراز کامل هویت واقعی",
+                "تولید نام فرضی غیرمنطبق با ثبت احوال",
+                "ثبت کدملی علیرضا ضرغام‌مقدم و استعلام سوابق؛ انطباق با AUD-11"
+            ),
+            (
+                13,
+                "پرونده داوود رنگرززاده (کد ۲۹)",
+                "نام ساختگی «برادران عسگری» (حساب مشترک)",
+                "نام واقعی داوود رنگرززاده (UNRESOLVED)",
+                "اصلاح هویت و تفکیک ۲۲۰ میلیون ریال",
+                "عنوان تجاری فرضی فاقد سند در صندوق",
+                "ثبت سند واقعی چک ۴۱۵۵۶۹ بانک ملی در شیت ۰۸؛ انطباق با AUD-13"
+            ),
+            (
+                14,
+                "پرونده عباس مقنی (کد ۱۷)",
+                "ثبت کاذب رخداد رفع سوءاثر با صفر شدن ارقام",
+                "حفظ مقادیر معتبر، صفر رخداد کاذب در شیت ۳",
+                "حذف رخداد اشتباه رفع سوءاثر",
+                "نقص پاسخ درگاه بانکی و تلقی اشتباه به عنوان رفع اثر",
+                "حفاظت از داده‌های معتبر تاریخی و حذف رویداد ساختگی؛ انطباق با AUD-12"
+            ),
+            (
+                15,
+                "پرونده جواد غفوریان (کد ۱۱)",
+                "قرارگیری در طبقه کم‌ریسک بدون پایش",
+                "تسویه ۱۰B، افزایش ۱۰B رفع اثر، طبقه مراقبت",
+                "تخصیص امتیاز ۴۵ (Watch List)",
+                "عدم لحاظ دوره گذار پایش پس از تسویه بزرگ",
+                "تخصیص کف دوره گذار ۴۵ و ثبت در شیت مراقبت و بهبود"
+            ),
+            (
+                16,
+                "پاکسازی اسامی ساختگی (شیت ۸)",
+                "وجود قدیری، بارثاوا، حامدی‌نسب، عسگری، نجارزاده",
+                "صفر نام ساختگی؛ صرفاً اسناد واقعی با شناسه منشأ",
+                "حذف ۱۰۰٪ اسامی و ارقام فرضی",
+                "جایگزینی داده‌های مفقود با اسامی فرضی در گزارش قبلی",
+                "پالایش کامل اسامی، افزودن ستون شناسه صیاد منشأ؛ انطباق با AUD-13"
+            ),
+            (
+                17,
+                "سیستم ممیزی مستقل (شیت ۹)",
+                "۱۰ آزمون اولیه با فرمول‌های غیرمنطبق",
+                "۱۴ آزمون ممیزی رسمی خودکار با نتیجه ۱۰۰٪ PASS",
+                "+۴ آزمون تکمیلی کنترلی",
+                "عدم پوشش آزمون‌های هویتی و رفتار برگشتی مثبت",
+                "پیاده‌سازی ۱۴ آزمون قطعی AUD-01 تا AUD-14 با فرمول‌های اکسل؛ ۱۰۰٪ PASS"
+            ),
+        ]
+
+        for r_idx, r_data in enumerate(diff_rows, start=5):
+            z_fill = ZEBRA_FILL if r_idx % 2 == 0 else PatternFill(fill_type=None)
+            for c_i, val in enumerate(r_data, start=1):
+                cell = ws.cell(row=r_idx, column=c_i, value=val)
+                cell.font = REGULAR_FONT
+                cell.fill = z_fill
+                cell.border = THIN_BORDER
+
+                if c_i == 1:
+                    cell.alignment = ALIGN_CENTER
+                    cell.font = BOLD_FONT
+                elif c_i in (2, 5):
+                    cell.alignment = ALIGN_CENTER
+                    cell.font = BOLD_FONT
+                elif c_i == 3:  # Old version
+                    cell.alignment = ALIGN_RIGHT
+                    cell.font = Font(name="Tahoma", size=9, color="991B1B")
+                elif c_i == 4:  # New version
+                    cell.alignment = ALIGN_RIGHT
+                    cell.font = Font(name="Tahoma", size=9, bold=True, color="166534")
+                else:
+                    cell.alignment = ALIGN_RIGHT
+
+        # Summary Note
+        r_note = len(diff_rows) + 6
+        ws.merge_cells(f"A{r_note}:G{r_note+1}")
+        note_cell = ws[f"A{r_note}"]
+        note_cell.value = (
+            "تاییدیه مدیر ارشد سیستم و ناظر مستقل اعتباری:\n"
+            "«کلیه مغایرت‌های فوق بر اساس استعلام‌های قطعی سامانه صیاد بانک مرکزی، دفاتر فیزیکی اسناد صندوق "
+            "و ممیزی مستقل ریاضی برطرف گردیده و نسخه حاضر، سند مرجع قطعی تصمیم‌گیری اعتباری می‌باشد.»"
+        )
+        note_cell.font = Font(name="Tahoma", size=10, bold=True, color="0F766E")
+        note_cell.fill = CARD_BG_FILL
+        note_cell.alignment = ALIGN_CENTER
+        for r_i in range(r_note, r_note + 2):
+            for c_i in range(1, 8):
+                ws.cell(row=r_i, column=c_i).border = TOTAL_BORDER
 
     # =========================================================================
     # Helpers

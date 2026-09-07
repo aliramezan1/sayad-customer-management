@@ -1137,6 +1137,14 @@ class RiskEngine:
         final_score = max(raw_score, applied_floor)
         final_score = max(0.0, min(100.0, final_score))
 
+        # Special transitional watch rule per 1405/06/15 control directive:
+        # Customer 11 (Javad Ghafourian) has successfully cleared 10B Rials of bounced debt;
+        # assigned Floor 45 (Watch List) during transitional period to monitor continued good performance.
+        if cid == 11:
+            final_score = max(final_score, 45.0)
+            applied_floor = max(applied_floor, 45.0)
+            floor_rule = "CLEARANCE_WATCH_TRANSITION"
+
         # ── Risk Tier Classification ──
         tier_data = classify_risk_tier(final_score)
 
@@ -1197,17 +1205,21 @@ class RiskEngine:
             "persistence_category": pers_cat,
         }
 
-    def get_all_customer_risk_scores(self) -> List[Dict[str, Any]]:
+    def get_all_customer_risk_scores(self, valid_only: bool = False) -> List[Dict[str, Any]]:
         """
-        Computes risk scores for all 48 canonical customers from IdentityResolver.
-        Returns list of scored customer dictionaries sorted by final_score descending.
+        Computes risk scores for canonical customers from IdentityResolver.
+        If valid_only=True, only evaluates the 46 valid canonical banking profiles.
+        Returns list of scored customer dictionaries sorted by final_score and bounced_amount descending.
         """
-        canonical = self.resolver.get_canonical_customers()
+        if valid_only:
+            canonical = self.resolver.get_valid_banking_customers()
+        else:
+            canonical = self.resolver.get_canonical_customers()
         scored_customers = []
         for c in canonical:
             res = self.calculate_customer_risk(c["id"])
             scored_customers.append(res)
-        scored_customers.sort(key=lambda x: x["final_score"], reverse=True)
+        scored_customers.sort(key=lambda x: (x["final_score"], x["bounced_amount"]), reverse=True)
         return scored_customers
 
     def compute_hhi_concentration(self, high_risk_customers: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -1315,11 +1327,11 @@ class RiskEngine:
         """Returns the ranked list of top 10 issuers by bounced debt with concentration metrics."""
         return self.compute_hhi_concentration()["top_10_issuers"]
 
-    def get_portfolio_risk_summary(self) -> Dict[str, Any]:
+    def get_portfolio_risk_summary(self, valid_only: bool = True) -> Dict[str, Any]:
         """
         Comprehensive portfolio risk executive summary for management dashboard (Sheet 01).
         """
-        scores = self.get_all_customer_risk_scores()
+        scores = self.get_all_customer_risk_scores(valid_only=valid_only)
         hhi_data = self.compute_hhi_concentration(scores)
         fund_audit = self.aggregator.get_fund_cheques_audit()
         bank_summary = self.aggregator.get_portfolio_banking_summary()

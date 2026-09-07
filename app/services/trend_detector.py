@@ -467,6 +467,10 @@ class TrendDetector:
 
                 persistence = self.classify_bounce_persistence(cid)
 
+                mousavi_note = ""
+                if cid == 4 and not str(last.get("inquiry_time", "")).startswith("2026-09-06"):
+                    mousavi_note = " (منشأ داده: REUSED_VALID_SUCCESS - رخداد از آخرین استعلام معتبر، نه الزاماً امروز)"
+
                 event = {
                     "event_type": "IN_FLIGHT_TO_BOUNCED",
                     "event_name_persian": "انتقال تعهد در راه به برگشتی",
@@ -488,7 +492,7 @@ class TrendDetector:
                     "latest_inquiry_time": last.get("inquiry_time"),
                     "description": (
                         f"انتقال مبلغ {abs(delta_in_transit):,.0f} ریال از وضعیت در راه به برگشتی در پرونده "
-                        f"{cust['full_name']} (کدملی {cust['national_id']}) با ضریب اطمینان {confidence_persian}."
+                        f"{cust['full_name']} (کدملی {cust['national_id']}) با ضریب اطمینان {confidence_persian}.{mousavi_note}"
                     ),
                 }
                 transitions.append(event)
@@ -534,12 +538,23 @@ class TrendDetector:
                     confidence = "HIGH"
                     confidence_persian = "بالا"
                 else:
-                    confidence = "MEDIUM"
-                    confidence_persian = "متوسط"
+                    confidence = "PARTIAL"
+                    confidence_persian = "بهبود جزئی / کاهش برگشتی همراه با افزایش رفع سوءاثر، اما بدون تطابق مبلغ کامل"
+
+                if confidence == "PARTIAL":
+                    desc = (
+                        f"بهبود جزئی / کاهش {abs(delta_bounced):,.0f} ریال از برگشتی همراه با افزایش {delta_cleared:,.0f} ریال "
+                        f"رفع سوءاثر، اما بدون تطابق مبلغ کامل در پرونده {cust['full_name']} (کدملی {cust['national_id']})."
+                    )
+                else:
+                    desc = (
+                        f"کاهش {abs(delta_bounced):,.0f} ریال از برگشتی و افزایش دقیق {delta_cleared:,.0f} ریال "
+                        f"در رفع سوءاثر پرونده {cust['full_name']} (کدملی {cust['national_id']})."
+                    )
 
                 event = {
                     "event_type": "REAL_CLEARANCE",
-                    "event_name_persian": "رفع سوءاثر واقعی و تسویه برگشتی",
+                    "event_name_persian": "بهبود جزئی و کاهش برگشتی" if confidence == "PARTIAL" else "رفع سوءاثر واقعی و تسویه برگشتی",
                     "customer_id": cid,
                     "customer_name": cust["full_name"],
                     "national_id": cust["national_id"],
@@ -555,10 +570,7 @@ class TrendDetector:
                     "confidence_persian": confidence_persian,
                     "first_inquiry_time": first.get("inquiry_time"),
                     "latest_inquiry_time": last.get("inquiry_time"),
-                    "description": (
-                        f"کاهش {abs(delta_bounced):,.0f} ریال از برگشتی و افزایش دقیق {delta_cleared:,.0f} ریال "
-                        f"در رفع سوءاثر پرونده {cust['full_name']} (کدملی {cust['national_id']})."
-                    ),
+                    "description": desc,
                 }
                 clearances.append(event)
 
