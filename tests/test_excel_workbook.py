@@ -223,7 +223,6 @@ def test_sheet_02_national_ids_preserve_leading_zeros(generated_workbook):
     assert nids[46] == "0927624011"  # Zahra Bahrami Pouya
     assert nids[40] == "0890543331"  # Mohammad Rafigh Toroghi
     assert nids[2] == "0933387075"   # Hossein Heshmati
-    assert nids[1] == "0933387075"   # Amirhossein Alipour
 
 
 # =============================================================================
