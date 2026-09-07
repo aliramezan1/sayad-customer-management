@@ -41,8 +41,24 @@ ALIGN_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 ALIGN_RIGHT = Alignment(horizontal="right", vertical="center", wrap_text=True)
 ALIGN_LEFT = Alignment(horizontal="left", vertical="center")
 
+# Prohibited credit expansion phrases for high-risk / newly cleared customers (AUD-19)
+PROHIBITED_CREDIT_EXPANSION_TERMS = [
+    "افزایش اعتبار",
+    "افزایش سقف",
+    "ارتقای سقف",
+    "ارتقاء سقف",
+    "توسعه اعتبار",
+    "اعتبار بیشتر",
+    "افزایش تسهیلات",
+    "افزایش حد اعتباری",
+    "پذیرش اعتبار بیشتر",
+    "امکان اعتبار بیشتر",
+    "مجاز به افزایش",
+    "مجاز به ارتقا",
+    "مجاز به ارتقاء",
+]
 
-# Definition of the 14 automated dual-audit tests (1405/06/15 Control Directives)
+# Definition of the 19 automated dual-audit tests (1405/06/15 Control Directives)
 DUAL_AUDIT_SPECS = [
     {
         "id": 1,
@@ -245,13 +261,13 @@ DUAL_AUDIT_SPECS = [
     {
         "id": 19,
         "rule_code": "AUD-19",
-        "title": "عدم تخصیص پیشنهاد افزایش اعتبار به مشتریان برگشتی‌دار یا تازه تسویه",
-        "description": "هیچ مشتری دارای برگشتی فعال یا تازه رفع سوءاثر شده (غفوریان و اشرافیان) پیشنهاد افزایش یا ارتقای سقف اعتبار دریافت نکرده است.",
-        "target_sheet": "02_مشتریان_یکتا",
-        "target_range": "C4:S49",
-        "expected_value": "۰ مورد پیشنهاد افزایش اعتبار",
-        "excel_formula": '=IF(AND(COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش*اعتبار*")=0, COUNTIFS(\'02_مشتریان_یکتا\'!C4:C49, "0941314121", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش*اعتبار*")=0, COUNTIFS(\'02_مشتریان_یکتا\'!C4:C49, "0921320711", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش*اعتبار*")=0), "PASS", "FAIL")',
-        "criteria": "AC 4 (Credit Policy Safeguard)",
+        "title": "پایش جامع عدم پیشنهاد توسعه اعتبار به صادرکنندگان پرریسک و تسویه‌شده",
+        "description": "بررسی کلیه شیت‌های تصمیمی (۰۲، ۰۴، ۰۵، ۰۶) و اطمینان از عدم درج هرگونه توصیه توسعه یا ارتقای اعتبار برای ۱۳ مشتری دارای برگشتی فعال و مشتری تازه رفع سوءاثر شده (غفوریان و اشرافیان).",
+        "target_sheet": "02، 04، 05، 06",
+        "target_range": "شیت‌های تصمیمی",
+        "expected_value": "۰ مورد نقض سیاست اعتباری (PASS)",
+        "excel_formula": '=IF((COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش اعتبار*") + COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش سقف*") + COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش تسهیلات*") + COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش حد اعتباری*") + COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*توسعه اعتبار*") + COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*اعتبار بیشتر*") + COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*ارتقا*") + COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*ارتقاء*") + COUNTIFS(\'02_مشتریان_یکتا\'!K4:K49, ">0", \'02_مشتریان_یکتا\'!S4:S49, "*مجاز به افزایش*") + COUNTIFS(\'02_مشتریان_یکتا\'!C4:C49, "0941314121", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش اعتبار*") + COUNTIFS(\'02_مشتریان_یکتا\'!C4:C49, "0941314121", \'02_مشتریان_یکتا\'!S4:S49, "*افزایش سقف*") + COUNTIFS(\'02_مشتریان_یکتا\'!C4:C49, "0941314121", \'02_مشتریان_یکتا\'!S4:S49, "*ارتقا*") + COUNTIFS(\'02_مشتریان_یکتا\'!C4:C49, "0941314121", \'02_مشتریان_یکتا\'!S4:S49, "*ارتقاء*") + COUNTIFS(\'02_مشتریان_یکتا\'!C4:C49, "0941314121", \'02_مشتریان_یکتا\'!S4:S49, "*توسعه اعتبار*") + COUNTIFS(\'02_مشتریان_یکتا\'!C4:C49, "0941314121", \'02_مشتریان_یکتا\'!S4:S49, "*اعتبار بیشتر*") + COUNTIF(\'04_اقدام_فوری\'!K4:K10, "*افزایش اعتبار*") + COUNTIF(\'04_اقدام_فوری\'!K4:K10, "*افزایش سقف*") + COUNTIF(\'04_اقدام_فوری\'!K4:K10, "*ارتقا*") + COUNTIF(\'04_اقدام_فوری\'!K4:K10, "*ارتقاء*") + COUNTIF(\'04_اقدام_فوری\'!K4:K10, "*توسعه اعتبار*") + COUNTIF(\'05_مراقبت\'!K4:K10, "*افزایش اعتبار*") + COUNTIF(\'05_مراقبت\'!K4:K10, "*افزایش سقف*") + COUNTIF(\'05_مراقبت\'!K4:K10, "*ارتقا*") + COUNTIF(\'05_مراقبت\'!K4:K10, "*ارتقاء*") + COUNTIF(\'05_مراقبت\'!K4:K10, "*توسعه اعتبار*") + COUNTIF(\'06_بهبود\'!J4:J10, "*افزایش اعتبار*") + COUNTIF(\'06_بهبود\'!J4:J10, "*افزایش سقف*") + COUNTIF(\'06_بهبود\'!J4:J10, "*افزایش تسهیلات*") + COUNTIF(\'06_بهبود\'!J4:J10, "*افزایش حد اعتباری*") + COUNTIF(\'06_بهبود\'!J4:J10, "*توسعه اعتبار*") + COUNTIF(\'06_بهبود\'!J4:J10, "*اعتبار بیشتر*") + COUNTIF(\'06_بهبود\'!J4:J10, "*ارتقا*") + COUNTIF(\'06_بهبود\'!J4:J10, "*ارتقاء*") + COUNTIF(\'06_بهبود\'!J4:J10, "*مجاز به افزایش*"))=0, "PASS", "FAIL")',
+        "criteria": "AC 4 (Comprehensive Credit Policy Safeguard)",
     },
 ]
 
@@ -398,12 +414,77 @@ class DualAuditService:
         t18 = True
         results.append({"id": 18, "code": "AUD-18", "passed": t18, "detail": "Dashboard title reflects reference date 1405/06/15"})
 
-        # 19. AUD-19: Credit Policy Safeguard (No Credit Increase for Bounced/Newly Cleared)
-        violations = [
-            s for s in scored_customers
-            if (s.get("bounced_amount", 0.0) > 0 or s.get("customer_id") in (11, 20)) and
-            "افزایش" in str(s.get("action_recommendation", "")) and "اعتبار" in str(s.get("action_recommendation", ""))
+        # 19. AUD-19: Comprehensive Credit Policy Safeguard (No Credit Increase for Bounced/Newly Cleared)
+        violations = []
+        restricted_nids = {"0941314121", "0921320711"}
+        for s in scored_customers:
+            if float(s.get("bounced_amount", 0.0)) > 0:
+                restricted_nids.add(str(s.get("national_id", "")).strip())
+
+        # A) Check in-memory scored_customers recommendations
+        for s in scored_customers:
+            nid = str(s.get("national_id", "")).strip()
+            if nid in restricted_nids:
+                rec = str(s.get("action_recommendation", ""))
+                for phrase in PROHIBITED_CREDIT_EXPANSION_TERMS:
+                    if phrase in rec:
+                        violations.append(f"Customer {s.get('full_name')} ({nid}) rec contains '{phrase}'")
+
+        # B) Check decision sheets in generated Excel files if present
+        target_check_paths = [
+            r"c:\Users\HP\Desktop\نام و نام خانوادگی مشتریان\گزارش_جامع_اعتباری_مشتریان_صیادی_۱۴۰۵۰۶۱۵.xlsx",
+            r"C:\Users\HP\Desktop\گزارش_جامع_اعتباری_مشتریان_صیادی_۱۴۰۵۰۶۱۵.xlsx",
+            r"C:\Users\HP\Desktop\گزارش_جامع_اعتباری_مشتریان_صیادی_۱۴۰۵۰۶۱۵_اصلاح_شده(2).xlsx",
         ]
+        wb_chk = None
+        for cand_path in target_check_paths:
+            if os.path.exists(cand_path):
+                try:
+                    wb_chk = openpyxl.load_workbook(cand_path, data_only=True)
+                    break
+                except Exception:
+                    pass
+
+        if wb_chk:
+            # 1. 02_مشتریان_یکتا (Rows 4-49, Col S)
+            if "02_مشتریان_یکتا" in wb_chk.sheetnames:
+                ws02 = wb_chk["02_مشتریان_یکتا"]
+                for r in range(4, 50):
+                    nid = str(ws02.cell(r, 3).value or "").strip()
+                    bnc = float(ws02.cell(r, 11).value or 0.0)
+                    act = str(ws02.cell(r, 19).value or "")
+                    if bnc > 0 or nid in restricted_nids:
+                        for phrase in PROHIBITED_CREDIT_EXPANSION_TERMS:
+                            if phrase in act:
+                                violations.append(f"Sheet 02 Row {r} ({nid}) contains '{phrase}'")
+
+            # 2. 04_اقدام_فوری (Rows 4 to max_row, Col K)
+            if "04_اقدام_فوری" in wb_chk.sheetnames:
+                ws04 = wb_chk["04_اقدام_فوری"]
+                for r in range(4, ws04.max_row + 1):
+                    act = str(ws04.cell(r, 11).value or "")
+                    for phrase in PROHIBITED_CREDIT_EXPANSION_TERMS:
+                        if phrase in act:
+                            violations.append(f"Sheet 04 Row {r} contains '{phrase}'")
+
+            # 3. 05_مراقبت (Rows 4 to max_row, Col K)
+            if "05_مراقبت" in wb_chk.sheetnames:
+                ws05 = wb_chk["05_مراقبت"]
+                for r in range(4, ws05.max_row + 1):
+                    act = str(ws05.cell(r, 11).value or "")
+                    for phrase in PROHIBITED_CREDIT_EXPANSION_TERMS:
+                        if phrase in act:
+                            violations.append(f"Sheet 05 Row {r} contains '{phrase}'")
+
+            # 4. 06_بهبود (Rows 4 to max_row, Col J)
+            if "06_بهبود" in wb_chk.sheetnames:
+                ws06 = wb_chk["06_بهبود"]
+                for r in range(4, ws06.max_row + 1):
+                    act = str(ws06.cell(r, 10).value or "")
+                    for phrase in PROHIBITED_CREDIT_EXPANSION_TERMS:
+                        if phrase in act:
+                            violations.append(f"Sheet 06 Row {r} contains '{phrase}'")
+
         t19 = (len(violations) == 0)
         results.append({"id": 19, "code": "AUD-19", "passed": t19, "detail": f"Credit increase violations: {len(violations)}"})
 
@@ -608,12 +689,12 @@ def audit_excel_workbook(workbook_path: str) -> Dict[str, Any]:
     audit_formulas = []
     if has_audit:
         ws_aud = wb["09_ممیزی"]
-        for r in range(8, 22):
+        for r in range(8, 8 + len(DUAL_AUDIT_SPECS)):
             cell_formula = ws_aud.cell(row=r, column=8).value
             audit_formulas.append(str(cell_formula))
 
     return {
-        "passed": (len(missing_sheets) == 0 and all_rtl and len(audit_formulas) == 14),
+        "passed": (len(missing_sheets) == 0 and all_rtl and len(audit_formulas) == len(DUAL_AUDIT_SPECS)),
         "missing_sheets": missing_sheets,
         "all_rtl": all_rtl,
         "rtl_status": rtl_checks,

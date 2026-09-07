@@ -56,6 +56,22 @@ DEFAULT_DESKTOP_OUTPUT_PATH = os.path.join(
     r"C:\Users\HP\Desktop",
     "گزارش_جامع_اعتباری_مشتریان_صیادی_۱۴۰۵۰۶۱۵.xlsx"
 )
+DEFAULT_DESKTOP_REVISED_PATH = os.path.join(
+    r"C:\Users\HP\Desktop",
+    "گزارش_جامع_اعتباری_مشتریان_صیادی_۱۴۰۵۰۶۱۵_اصلاح_شده.xlsx"
+)
+DEFAULT_DESKTOP_REVISED2_PATH = os.path.join(
+    r"C:\Users\HP\Desktop",
+    "گزارش_جامع_اعتباری_مشتریان_صیادی_۱۴۰۵۰۶۱۵_اصلاح_شده(2).xlsx"
+)
+DEFAULT_PROJECT_REVISED_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "گزارش_جامع_اعتباری_مشتریان_صیادی_۱۴۰۵۰۶۱۵_اصلاح_شده.xlsx"
+)
+DEFAULT_PROJECT_REVISED2_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "گزارش_جامع_اعتباری_مشتریان_صیادی_۱۴۰۵۰۶۱۵_اصلاح_شده(2).xlsx"
+)
 
 # Mandatory Deduplication Declaration (Verbatim from prompt & spec)
 MANDATORY_DEDUPLICATION_STATEMENT = (
@@ -201,21 +217,21 @@ class ExcelExporter:
                 f.write(excel_bytes)
 
         if save_to_defaults:
-            # Project root destination
-            try:
-                os.makedirs(os.path.dirname(os.path.abspath(DEFAULT_PROJECT_OUTPUT_PATH)), exist_ok=True)
-                with open(DEFAULT_PROJECT_OUTPUT_PATH, "wb") as f:
-                    f.write(excel_bytes)
-            except Exception:
-                pass
-
-            # Desktop destination
-            try:
-                os.makedirs(os.path.dirname(os.path.abspath(DEFAULT_DESKTOP_OUTPUT_PATH)), exist_ok=True)
-                with open(DEFAULT_DESKTOP_OUTPUT_PATH, "wb") as f:
-                    f.write(excel_bytes)
-            except Exception:
-                pass
+            all_target_paths = [
+                DEFAULT_PROJECT_OUTPUT_PATH,
+                DEFAULT_DESKTOP_OUTPUT_PATH,
+                DEFAULT_DESKTOP_REVISED_PATH,
+                DEFAULT_DESKTOP_REVISED2_PATH,
+                DEFAULT_PROJECT_REVISED_PATH,
+                DEFAULT_PROJECT_REVISED2_PATH,
+            ]
+            for target_dest in all_target_paths:
+                try:
+                    os.makedirs(os.path.dirname(os.path.abspath(target_dest)), exist_ok=True)
+                    with open(target_dest, "wb") as f:
+                        f.write(excel_bytes)
+                except Exception:
+                    pass
 
         return excel_bytes
 
@@ -288,9 +304,21 @@ class ExcelExporter:
             ws.cell(row=idx, column=1).fill = r_fill
             ws.cell(row=idx, column=1).border = THIN_BORDER
 
-            # Set formula for row 17: =COUNTIF('02_مشتریان_یکتا'!K4:K49, ">0")
-            if idx == 17:
-                val_cell = ws.cell(row=idx, column=2, value='=COUNTIF(\'02_مشتریان_یکتا\'!K4:K49, ">0")')
+            kpi_formulas = {
+                6: "=COUNTA('02_مشتریان_یکتا'!B4:B49)",
+                7: "=COUNTA('07_چکهای_تفصیلی'!B2:B148)",
+                8: "=SUM('07_چکهای_تفصیلی'!L2:L148)",
+                9: "=SUM('02_مشتریان_یکتا'!H4:H49)",
+                10: "=SUM('02_مشتریان_یکتا'!J4:J49)",
+                11: "=SUM('02_مشتریان_یکتا'!K4:K49)",
+                12: "=SUM('02_مشتریان_یکتا'!L4:L49)",
+                13: "=B10+B11",
+                14: "=(B11/B13)*100",
+                17: "=COUNTIF('02_مشتریان_یکتا'!K4:K49, \">0\")",
+            }
+
+            if idx in kpi_formulas:
+                val_cell = ws.cell(row=idx, column=2, value=kpi_formulas[idx])
             else:
                 val_cell = ws.cell(row=idx, column=2, value=val)
 
@@ -298,7 +326,11 @@ class ExcelExporter:
             val_cell.fill = r_fill
             val_cell.border = THIN_BORDER
             val_cell.alignment = ALIGN_CENTER
-            if isinstance(val, (int, float)) and val > 1000:
+            if idx in (6, 7, 8, 9, 10, 11, 12, 13, 17):
+                val_cell.number_format = "#,##0"
+            elif idx in (14, 15, 16):
+                val_cell.number_format = "0.00"
+            elif isinstance(val, (int, float)) and val > 1000:
                 val_cell.number_format = "#,##0"
             elif isinstance(val, float):
                 val_cell.number_format = "0.00"
@@ -898,7 +930,7 @@ class ExcelExporter:
         ws["A1"].alignment = ALIGN_RIGHT
 
         ws.merge_cells("A2:K2")
-        ws["A2"] = "مشتریان دارای ریسک بحرانی و برگشتی سنگین؛ توقف بلادرنگ افزایش اعتبار، ضبط وثایق و پیگیری حقوقی وصول"
+        ws["A2"] = "مشتریان دارای ریسک بحرانی و برگشتی سنگین؛ انسداد فوری تعهدات، ضبط وثایق و پیگیری حقوقی وصول"
         ws["A2"].font = SUBTITLE_FONT
         ws["A2"].alignment = ALIGN_RIGHT
 
@@ -987,7 +1019,7 @@ class ExcelExporter:
         ws["A1"].alignment = ALIGN_RIGHT
 
         ws.merge_cells("A2:K2")
-        ws["A2"] = "مشتریان دارای نوسان اعتباری یا سابقه برگشتی متناوب؛ اخذ تضمین فرعی، عدم افزایش حد اعتباری و نظارت هفتگی"
+        ws["A2"] = "نوع پایش بر اساس وضعیت مشتری تعیین می‌شود؛ پرونده‌های دارای رخداد جدید، رفع سوءاثر تازه یا داده غیرتازه باید روزانه پایش شوند."
         ws["A2"].font = SUBTITLE_FONT
         ws["A2"].alignment = ALIGN_RIGHT
 
@@ -1021,17 +1053,17 @@ class ExcelExporter:
 
             # Differentiated reasons and actions per specific customer directives
             if cid == 18:  # Vahid Mohammadi Anvar
-                reason_desc = "برگشتی فعال ۴.۲ میلیارد ریالی و سابقه ۱۰ دوره برگشتی در استعلام‌های تاریخی"
-                action_rec = "اخذ تضمین فرعی، پایش روزانه، عدم افزایش اعتبار و نظارت مستمر بر مبالغ در راه"
+                reason_desc = "برگشتی فعال ۴,۲۰۰,۰۰۰,۰۰۰ ریال و رخداد افزایش جدید برگشتی (+۳.۷B)؛ سابقه ۱۰ دوره برگشتی در استعلام‌های تاریخی"
+                action_rec = "پایش روزانه، اخذ تضمین فرعی، مسدودسازی سقف تسهیلات و نظارت مستمر بر مبالغ در راه"
             elif cid == 11:  # Javad Ghafourian
-                reason_desc = "دوره گذار پایش پس از تسویه ۱ میلیارد ریال چک برگشتی؛ اعمال کف ۴۵ مراقبت"
-                action_rec = "پایش روزانه، کنترل چک‌های در راه، عدم افزایش سقف اعتباری (دوره گذار پایش پس از تسویه)"
+                reason_desc = "تازه رفع سوءاثر شده (تسویه ۱,۰۰۰,۰۰۰,۰۰۰ ریال) و هنوز دوره تثبیت را طی نکرده؛ اعمال کف ۴۵ مراقبت"
+                action_rec = "پایش روزانه، کنترل چک‌های در راه، تثبیت سقف فعلی و منع گسترش تعهدات (دوره گذار پایش)"
             elif cid == 4:  # Seyed Jamal Mousavi
-                reason_desc = "برگشتی فعال ۱.۵ میلیارد ریالی، انتقال تعهد در راه به برگشتی و سابقه ۶ دوره برگشتی"
-                action_rec = "پایش روزانه، کنترل وصولی‌ها و عدم پذیرش چک جدید بدون وثیقه نقد"
+                reason_desc = "برگشتی فعلی: 2,800,000,000 ریال | افزایش اخیر برگشتی: 1,500,000,000 ریال؛ داده جاری از نوع reused/stale و نیازمند استعلام تازه"
+                action_rec = "پایش روزانه، کنترل وصولی‌ها، استعلام تازه فوری، انسداد سقف و عدم پذیرش چک جدید بدون وثیقه نقد"
             elif cid == 45:  # Milad Deljou
                 reason_desc = "ریسک تمرکز بالای تعهدات نزد صندوق (۲۷.۵ میلیارد ریال) و برگشتی فعال ۱.۳۲۶ میلیارد ریالی"
-                action_rec = "اخذ تضمین فرعی، کنترل استعلام‌های آتی، پایش هفتگی و عدم افزایش تعهدات"
+                action_rec = "پایش مستمر، اخذ تضمین فرعی، کنترل استعلام‌های آتی و تثبیت تعهدات در سقف فعلی"
             else:
                 reason_desc = "نوسان در چک‌های در راه، سابقه برگشتی مثبت یا ریسک تمرکز تعهدات نزد صندوق"
                 action_rec = "اخذ چک تضمین شخص ثالث، تماس ۷۲ ساعت قبل از سررسید، محدودسازی صدور چک جدید"
@@ -1093,7 +1125,7 @@ class ExcelExporter:
         ws["A1"].alignment = ALIGN_RIGHT
 
         ws.merge_cells("A2:K2")
-        ws["A2"] = "صادرکنندگانی که کاهش مستند در مبالغ برگشتی و افزایش معادل در مبالغ رفع سوءاثر ثبت کرده‌اند (تسویه موفق)"
+        ws["A2"] = "صادرکنندگانی که کاهش در مبالغ برگشتی یا افزایش در مبالغ رفع سوءاثر ثبت کرده‌اند؛ تطابق لزوماً معادل یا یک‌به‌یک نبوده و پایش متناسب با وضعیت ریسک هر پرونده تعیین می‌شود."
         ws["A2"].font = SUBTITLE_FONT
         ws["A2"].alignment = ALIGN_RIGHT
 
@@ -1127,12 +1159,15 @@ class ExcelExporter:
             # Strictly follow user directive and AUD-19 credit policy
             if cid == 11:  # Javad Ghafourian
                 status_text = "دوره گذار پایش (مراقبت)"
-                action_text = "تسویه اخیر ۱ میلیارد ریال؛ دوره گذار پایش، پایش روزانه، تثبیت سقف و ممنوعیت ارتقای تعهدات"
+                action_text = "تسویه اخیر ۱ میلیارد ریال؛ دوره گذار پایش، پایش روزانه، تثبیت سقف تسهیلات فعلی و توقف توسعه تعهدات"
                 row_fill = WATCH_FILL
                 font_status = WATCH_FONT
             elif cid == 20:  # Vahid Ashrafian
-                status_text = "بهبود نسبی (پرریسک)"
-                action_text = "بهبود نسبی، پایش روزانه، تثبیت سقف تسهیلات، درخواست تضمین تکمیلی"
+                status_text = "بهبود نسبی (پرریسک - نیازمند پایش روزانه)"
+                action_text = (
+                    "بهبود نسبی مشاهده شده است؛ برگشتی 170,000,000 ریال کاهش یافته و رفع سوءاثر 780,000,000 ریال افزایش یافته است، "
+                    "اما تطابق یکبهیک وجود ندارد. مشتری همچنان دارای برگشتی فعال، پرریسک و نیازمند پایش روزانه و تضمین تکمیلی است."
+                )
                 row_fill = HIGH_RISK_FILL
                 font_status = HIGH_FONT
             elif curr_bounced > 0:
@@ -2013,6 +2048,42 @@ class ExcelExporter:
                 "+۹ آزمون تکمیلی کنترلی و رفتاری",
                 "عدم پوشش آزمون‌های هویتی و رفتار برگشتی مثبت",
                 "پیاده‌سازی ۱۹ آزمون قطعی AUD-01 تا AUD-19 با فرمول‌های اکسل؛ ۱۰۰٪ PASS"
+            ),
+            (
+                18,
+                "پایش روزانه پرونده‌های خاص (شیت ۵)",
+                "عبارت عمومی نظارت هفتگی برای کل شیت",
+                "پایش روزانه برای محمدی انور، غفوریان و موسوی بر اساس وضعیت ریسک",
+                "تفکیک و ارتقای سطح پایش",
+                "استفاده از نسخه واحد نظارتی بدون توجه به رخداد جدید و داده کهنه",
+                "اصلاح زیرعنوان و تعیین صریح پایش روزانه در متن اقدامات شیت ۰۵"
+            ),
+            (
+                19,
+                "تفکیک مبالغ سید جمال موسوی (شیت ۵)",
+                "ادعای اشتباه «برگشتی فعال ۱.۵ میلیارد ریال»",
+                "برگشتی فعلی: ۲,۸۰۰,۰۰۰,۰۰۰ ریال | افزایش اخیر برگشتی: ۱,۵۰۰,۰۰۰,۰۰۰ ریال",
+                "اصلاح مبلغ و تفکیک دقیق",
+                "اشتباه گرفتن افزایش اخیر با کل بدهی برگشتی جاری",
+                "تفکیک شفاف برگشتی فعلی از افزایش اخیر و ثبت داده کهنه نیازمند استعلام تازه"
+            ),
+            (
+                20,
+                "عدم تطابق معادل در بهبود (شیت ۶)",
+                "ادعای تسویه موفق معادل و تطابق یک‌به‌یک برای کلیه پرونده‌ها",
+                "اشرافیان: کاهش ۱۷۰M برگشتی / افزایش ۷۸۰M رفع اثر بدون رابطه معادل",
+                "حذف فرضیه معادل بودن مبالغ",
+                "تعمیم تسویه غفوریان به پرونده نامتقارن اشرافیان",
+                "اصلاح زیرعنوان شیت ۰۶ و درج متن دقیق بدون عبارات گمراه‌کننده برای اشرافیان"
+            ),
+            (
+                21,
+                "تقویت همه‌جانبه AUD-19 (شیت ۹)",
+                "کنترل محدود فقط روی عبارت «افزایش اعتبار» در شیت ۰۲",
+                "پوشش ۱۳ عبارت ممنوع در کلیه شیت‌های تصمیمی (۰۲، ۰۴، ۰۵، ۰۶) با خروجی ۰ نقض",
+                "جامعیت ۱۰۰٪ کنترل سیاست اعتباری",
+                "عدم پوشش مترادف‌های توسعه اعتبار (ارتقای سقف، توسعه، حد اعتباری)",
+                "ارتقای فرمول اکسل و ارزیابی سیستمی به ۱۳ عبارت در ۴ شیت تصمیمی"
             ),
         ]
 

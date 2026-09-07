@@ -352,31 +352,31 @@ def test_sheet_08_unresolved_and_exempt_totals(generated_workbook):
 # 9. Sheet 09: 09_ممیزی & Dual-Audit Tests
 # =============================================================================
 
-def test_sheet_09_contains_14_audit_tests(generated_workbook):
-    """Verify Sheet 09 contains exactly 14 automated audit tests with AUD-01 to AUD-14."""
+def test_sheet_09_contains_19_audit_tests(generated_workbook):
+    """Verify Sheet 09 contains exactly 19 automated audit tests with AUD-01 to AUD-19."""
     wb, _ = generated_workbook
     ws = wb["09_ممیزی"]
-    test_codes = [ws.cell(r, 2).value for r in range(8, 22)]
-    expected_codes = [f"AUD-{i:02d}" for i in range(1, 15)]
+    test_codes = [ws.cell(r, 2).value for r in range(8, 27)]
+    expected_codes = [f"AUD-{i:02d}" for i in range(1, 20)]
     assert test_codes == expected_codes
 
 
 def test_sheet_09_all_formulas_present(generated_workbook):
-    """Verify all 14 tests in Sheet 09 contain valid Excel IF formulas."""
+    """Verify all 19 tests in Sheet 09 contain valid Excel IF formulas."""
     wb, _ = generated_workbook
     ws = wb["09_ممیزی"]
-    for r in range(8, 22):
+    for r in range(8, 27):
         formula_cell = ws.cell(r, 8)
         assert str(formula_cell.value).startswith("=IF("), f"Row {r} must contain an Excel =IF(...) formula"
 
 
 def test_dual_audit_service_programmatic_verification():
-    """Verify DualAuditService programmatic audit passes 14/14 tests."""
+    """Verify DualAuditService programmatic audit passes 19/19 tests."""
     service = DualAuditService()
     res = service.evaluate_invariants_programmatically()
     assert res["all_passed"] is True
-    assert res["passed_count"] == 14
-    assert res["total_count"] == 14
+    assert res["passed_count"] == 19
+    assert res["total_count"] == 19
 
 
 def test_independent_audit_excel_workbook_function():
@@ -384,7 +384,7 @@ def test_independent_audit_excel_workbook_function():
     res = audit_excel_workbook(DEFAULT_PROJECT_OUTPUT_PATH)
     assert res["passed"] is True
     assert res["all_rtl"] is True
-    assert res["audit_tests_count"] == 14
+    assert res["audit_tests_count"] == 19
     assert len(res["missing_sheets"]) == 0
 
 
